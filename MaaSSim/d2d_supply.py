@@ -134,22 +134,44 @@ def platform_regist(inData, end_day, **kwargs):
     exp_reg_drivers = end_day.loc[end_day.registered]
     average_perc_income = exp_reg_drivers.new_perc_inc.mean()
 
-    samp = np.random.rand(params.nV) <= params.evol.drivers.regist.samp   # Sample of drivers making registration choice
+    regist_df = pd.DataFrame(data={'inform': inData.vehicles.informed, 'prev_regist': end_day.registered, 'work_exp': end_day.worked_days, 'expected_income': end_day.new_perc_inc})
+    regist_df.loc[~regist_df.prev_regist, ['expected_income']] = average_perc_income
+    regist_df['decis'] = pd.Series(np.random.rand(params.nV) <= params.evol.drivers.regist.samp) # Sample of drivers making (de)registration decision
+    regist_df.loc[((regist_df.work_exp < 5) & (regist_df.prev_regist)) | (~regist_df.inform), 'decis'] = False
 
     # Probability to participate
-    util_ptcp = np.ones(params.nV) * params.evol.drivers.particip.beta * average_perc_income
+    util_ptcp = params.evol.drivers.particip.beta * regist_df.expected_income.to_numpy()
     util_no_ptcp = params.evol.drivers.particip.beta * inData.vehicles.res_wage.to_numpy()
-    prob_d_reg = np.exp(util_ptcp) / (np.exp(util_ptcp) + np.exp(util_no_ptcp))
-    
-    util_reg = params.evol.drivers.regist.beta * average_perc_income * prob_d_reg
-    util_not_reg = params.evol.drivers.regist.beta * (inData.vehicles.res_wage.to_numpy() + params.evol.drivers.regist.cost_comp)
-    prob_regist = np.exp(util_reg) / (np.exp(util_reg) + np.exp(util_not_reg))
-    regist_decision = (np.random.rand(params.nV) < prob_regist) & inData.vehicles.informed & samp
+    prob_d_ptcp = np.exp(util_ptcp) / (np.exp(util_ptcp) + np.exp(util_no_ptcp))
+
+    util_reg = params.evol.drivers.regist.beta * regist_df.expected_income.to_numpy() * prob_d_ptcp
+    util_not_reg = params.evol.drivers.regist.beta * (
+                inData.vehicles.res_wage.to_numpy() * prob_d_ptcp + params.evol.drivers.regist.cost_comp)
+    prob_regist_util = np.exp(util_reg) / (np.exp(util_reg) + np.exp(util_not_reg))
+    satisfied = np.random.rand(params.nV) < prob_regist_util
+    regist_decision = satisfied & regist_df.decis
+    # deregist_decision = ~satisfied & regist_df.decis
 
     prev_regist = inData.vehicles.registered.to_numpy()
-    registered = (np.concatenate(([prev_regist],[regist_decision]),axis=0).transpose()).any(axis=1)
-    regist_res = pd.DataFrame(data = {'registered': registered, 'expected_income': end_day.new_perc_inc})
+    registered = (np.concatenate(([prev_regist], [regist_decision]), axis=0).transpose()).any(axis=1)
+    regist_res = pd.DataFrame(data={'registered': registered, 'expected_income': end_day.new_perc_inc})
     regist_res.loc[((~inData.vehicles.registered) & (regist_res.registered)), ['expected_income']] = average_perc_income
+    # samp = np.random.rand(params.nV) <= params.evol.drivers.regist.samp   # Sample of drivers making registration choice
+
+    # # Probability to participate
+    # util_ptcp = np.ones(params.nV) * params.evol.drivers.particip.beta * average_perc_income
+    # util_no_ptcp = params.evol.drivers.particip.beta * inData.vehicles.res_wage.to_numpy()
+    # prob_d_reg = np.exp(util_ptcp) / (np.exp(util_ptcp) + np.exp(util_no_ptcp))
+    #
+    # util_reg = params.evol.drivers.regist.beta * average_perc_income * prob_d_reg
+    # util_not_reg = params.evol.drivers.regist.beta * (inData.vehicles.res_wage.to_numpy() + params.evol.drivers.regist.cost_comp)
+    # prob_regist = np.exp(util_reg) / (np.exp(util_reg) + np.exp(util_not_reg))
+    # regist_decision = (np.random.rand(params.nV) < prob_regist) & inData.vehicles.informed & samp
+    #
+    # prev_regist = inData.vehicles.registered.to_numpy()
+    # registered = (np.concatenate(([prev_regist],[regist_decision]),axis=0).transpose()).any(axis=1)
+    # regist_res = pd.DataFrame(data = {'registered': registered, 'expected_income': end_day.new_perc_inc})
+    # regist_res.loc[((~inData.vehicles.registered) & (regist_res.registered)), ['expected_income']] = average_perc_income
     
     return regist_res
 
