@@ -81,11 +81,13 @@ def update_d2d_travellers(*args, **kwargs):
 
     ret['init_perc_wait'] = sim.passengers.expected_wait.to_numpy()
     ret['experience'] = days_with_exp.to_numpy()
-    experienced_trav = (ret.experience >= params.evol.travellers.omega).astype(int)
-    kappa = (experienced_trav / params.evol.travellers.omega + (1 - experienced_trav) / (ret.experience + 1)) * ret.requests.astype(int)
+#     experienced_trav = (ret.experience >= params.evol.travellers.omega).astype(int)
+#     kappa = (experienced_trav / params.evol.travellers.omega + (1 - experienced_trav) / (ret.experience + 1)) * ret.requests.astype(int)
     ret['corr_xp_wait'] = ret.xp_wait.copy()
     ret.loc[(ret.requests & (~ret.gets_offer)),['corr_xp_wait']] = params.evol.travellers.reject_penalty
-    new_perc_wait = (1 - kappa) * ret.init_perc_wait + kappa * ret.corr_xp_wait
+#     new_perc_wait = (1 - kappa) * ret.init_perc_wait + kappa * ret.corr_xp_wait
+    new_perc_wait = learning_travs(params = params, prev_perc = ret.init_perc_wait, exp = ret.corr_xp_wait)
+
     ret['new_perc_wait'] = new_perc_wait.to_numpy()
     ret.loc[ret.informed & (~ret.requests), 'new_perc_wait'] = ret.loc[ret.informed & (~ret.requests), 'init_perc_wait']
     ret['mode'] = sim.passengers.mode_day.to_numpy()
@@ -325,3 +327,12 @@ def util_rs(inData, params, rs_wait, ASC_rs):
     U_rs = prefs.beta_wait_rs * rs_wait + prefs.beta_time_moto * rs_ivt + prefs.beta_cost * rs_fare + ASC_rs
     
     return U_rs
+
+
+def learning_travs(params, prev_perc, exp):
+    "returns new perceived waiting time of group of travellers"
+    kappa = params.evol.travellers.kappa
+#     kappa = (experienced_driver / params.evol.drivers.omega + (1 - experienced_driver) / (ret.worked_days + 1)) * (1 - ret.out)
+    new_perc = (1 - kappa) * prev_perc + kappa * exp
+    
+    return new_perc

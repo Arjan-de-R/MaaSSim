@@ -95,9 +95,10 @@ def update_d2d_drivers(*args, **kwargs):
     ret['exp_inc'] = sim.res[run_id].veh_exp.NET_INCOME.to_numpy()
     ret.loc[ret.out, 'exp_inc'] = np.nan
     ret['worked_days'] = worked_days.to_numpy()
-    experienced_driver = (ret.worked_days >= params.evol.drivers.omega).astype(int)
-    kappa = (experienced_driver / params.evol.drivers.omega + (1 - experienced_driver) / (ret.worked_days + 1)) * (1 - ret.out)
-    new_perc_inc = (1 - kappa) * ret.init_perc_inc + kappa * ret.exp_inc
+#     experienced_driver = (ret.worked_days >= params.evol.drivers.omega).astype(int)
+#     kappa = (experienced_driver / params.evol.drivers.omega + (1 - experienced_driver) / (ret.worked_days + 1)) * (1 - ret.out)
+#     new_perc_inc = (1 - kappa) * ret.init_perc_inc + kappa * ret.exp_inc
+    new_perc_inc = learning_drivers(params = params, prev_perc = ret.init_perc_inc, exp = ret.exp_inc, out = ret.out)
     
     ret['new_perc_inc'] = new_perc_inc.to_numpy()
     ret.loc[(ret.registered) & (ret.out), 'new_perc_inc'] = ret.loc[(ret.registered) & (ret.out), 'init_perc_inc']
@@ -189,3 +190,12 @@ def D2D_driver_out(*args, **kwargs):
         prob_d_all = prob_d_reg
         return bool(prob_d_all < random.random())
     return bool(perc_income < veh.veh.res_wage)
+
+def learning_drivers(params, out, prev_perc, exp):
+    "returns new perceived income of group of drivers"
+    kappa = params.evol.drivers.kappa * (1 - out)
+#     kappa = (experienced_driver / params.evol.drivers.omega + (1 - experienced_driver) / (ret.worked_days + 1)) * (1 - ret.out)
+    
+    new_perc = (1 - kappa) * prev_perc + kappa * exp
+    
+    return new_perc
