@@ -47,11 +47,14 @@ def D2D_summary(**kwargs):
     corr_wait_time.columns = list(range(len(travs)))
     perc_wait = pd.concat([travs[i].init_perc_wait for i in range(len(travs))], axis=1)
     perc_wait.columns = list(range(len(travs)))
+#     mode_day = pd.concat([travs[i].mode_day for i in range(len(travs))], axis=1)
+#     mode_day.columns = list(range(len(travs)))
     evol_micro.demand = DotMap()
     evol_micro.demand.inform = inform
     evol_micro.demand.requests = requests
     evol_micro.demand.gets_offer = gets_offer
     evol_micro.demand.accepts_offer = accepts_offer
+#     evol_micro.demand.mode_day = mode_day
     evol_micro.demand.wait_time = wait_time
     evol_micro.demand.corr_wait_time = corr_wait_time
     evol_micro.demand.perc_wait = perc_wait
