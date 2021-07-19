@@ -135,7 +135,7 @@ def platform_regist(inData, end_day, **kwargs):
     exp_reg_drivers = end_day.loc[end_day.registered]
     average_perc_income = exp_reg_drivers.new_perc_inc.mean()
 
-    regist_df = pd.DataFrame(data={'inform': inData.vehicles.informed, 'prev_regist': end_day.registered, 'work_exp': end_day.worked_days, 'expected_income': end_day.new_perc_inc})
+    regist_df = pd.DataFrame(data={'inform': inData.vehicles.informed, 'prev_regist': end_day.registered, 'work_exp': end_day.worked_days, 'expected_income': end_day.new_perc_inc},index=np.arange(1,len(inData.vehicles)+1))
     regist_df.loc[~regist_df.prev_regist, ['expected_income']] = average_perc_income
     regist_df['decis'] = pd.Series(np.random.rand(params.nV) <= params.evol.drivers.regist.samp) # Sample of drivers making (de)registration decision
     regist_df.loc[((regist_df.work_exp < 5) & (regist_df.prev_regist)) | (~regist_df.inform), 'decis'] = False
