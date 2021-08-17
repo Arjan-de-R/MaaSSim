@@ -1,7 +1,6 @@
 from MaaSSim.traveller import travellerEvent
 import pandas as pd
 import numpy as np
-import random
 import math
 
 
@@ -115,9 +114,12 @@ def d2d_no_request(*args, **kwargs):
 
     return trav_out
 
+
 def wom_trav(inData, end_day, **kwargs):
     "determine which travellers are informed before the start of the new day"
     params = kwargs.get('params', None)
+    exp_inf_trav = end_day.loc[end_day.informed]
+    average_perc_wait = exp_inf_trav.new_perc_wait.mean()
     nP_inf = inData.passengers.informed.sum()
     nP_uninf = len(inData.passengers) - nP_inf
 
@@ -131,22 +133,22 @@ def wom_trav(inData, end_day, **kwargs):
     prev_inf = inData.passengers.informed.to_numpy()
     informed = (np.concatenate(([prev_inf],[new_inf]),axis=0).transpose()).any(axis=1)
     res_inf = pd.DataFrame(data = {'informed': informed, 'perc_wait': end_day.new_perc_wait}, index=np.arange(0,len(inData.passengers)))
-    res_inf.loc[(res_inf.informed) & (~end_day.informed),'perc_wait'] = params.evol.travellers.inform.start_wait
+    res_inf.loc[(res_inf.informed) & (~end_day.informed),'perc_wait'] = average_perc_wait
 
     return res_inf
 
 
-def d2d_accept_offer(*args, **kwargs):
-    # returns boolean True if passenger decides not to use (private) ridesourcing for given day (i.e. low quality offer)
-    traveller = kwargs.get('traveller', None)
-    sim = traveller.sim
-
-    platform_id, offer = list(traveller.offers.items())[0]
-    rs_wait = sim.skims.ride.T[sim.vehs[offer['veh_id']].veh.pos][traveller.request.origin]
-
-    rs_choice = mode_choice(traveller=traveller, rs_wait=rs_wait)
-
-    return not rs_choice
+# def d2d_accept_offer(*args, **kwargs):
+#     # returns boolean True if passenger decides not to use (private) ridesourcing for given day (i.e. low quality offer)
+#     traveller = kwargs.get('traveller', None)
+#     sim = traveller.sim
+#
+#     platform_id, offer = list(traveller.offers.items())[0]
+#     rs_wait = sim.skims.ride.T[sim.vehs[offer['veh_id']].veh.pos][traveller.request.origin]
+#
+#     rs_choice = mode_choice(traveller=traveller, rs_wait=rs_wait)
+#
+#     return not rs_choice
 
 
 # def mode_choice(**kwargs):
@@ -189,8 +191,8 @@ def d2d_accept_offer(*args, **kwargs):
 
 #     return decis[0]
 
-def mode_filter(inData, params):
-    "mode choice based on no waiting time for RS, used to filter travellers with low probability of using RS"
+def prefs_travs(inData, params):
+    "draw mode preferences for the group of travellers"
     prefs = params.mode_choice
     passengers = inData.passengers
     
@@ -199,17 +201,25 @@ def mode_filter(inData, params):
     passengers['U_car'] = utils.car
     passengers['U_pt'] = utils.pt
     
-    rs_wait = 0
     ASC_rs = np.random.normal(prefs.ASC_rs,prefs.ASC_rs_sd,len(inData.passengers))
     passengers['ASC_rs'] = ASC_rs
-    utils.rs = util_rs(inData, params, rs_wait, ASC_rs)
     
+    return passengers
+
+
+def mode_filter(inData, params):
+    "mode choice based on no waiting time for RS, used to filter travellers with low probability of using RS"
+    passengers = inData.passengers
+    utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt})
+    rs_wait = 0
+    utils['rs'] = util_rs(inData, params, rs_wait)
+
     probabilities = mode_probs(utils)
     cuml = probabilities.cumsum(axis=1)
     draw = cuml.gt(np.random.random(len(passengers)),axis=0) * 1
     probabilities['decis'] = draw.idxmax(axis="columns")
     probabilities.loc[probabilities.rs > params.evol.travellers.min_prob, "decis"] = 'day-to-day'
-    
+
     passengers['mode_choice'] = probabilities.decis
     
     return passengers
@@ -257,9 +267,8 @@ def mode_preday(inData, params):
     "determine the mode at the start of a day for a pool of travellers"
     passengers = inData.passengers
     rs_wait = passengers.expected_wait
-    ASC_rs = passengers.ASC_rs
     
-    U_rs = util_rs(inData, params, rs_wait, ASC_rs)
+    U_rs = util_rs(inData, params, rs_wait)
     utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt, 'rs': U_rs})
     utils.loc[~inData.passengers.informed, 'rs'] = -math.inf
     
@@ -315,7 +324,7 @@ def mode_probs(utils):
     return probabilities
 
 
-def util_rs(inData, params, rs_wait, ASC_rs):
+def util_rs(inData, params, rs_wait):
     passengers = inData.passengers
     requests = inData.requests
     prefs = params.mode_choice
@@ -324,7 +333,7 @@ def util_rs(inData, params, rs_wait, ASC_rs):
     rs_fare = np.ones(len(inData.passengers)) * params.platforms.base_fare + params.platforms.fare * rs_ivt * (params.speeds.ride / 1000)
     rs_fare[rs_fare < params.platforms.min_fare] += params.platforms.min_fare
     
-    U_rs = prefs.beta_wait_rs * rs_wait + prefs.beta_time_moto * rs_ivt + prefs.beta_cost * rs_fare + ASC_rs
+    U_rs = prefs.beta_wait_rs * rs_wait + prefs.beta_time_moto * rs_ivt + prefs.beta_cost * rs_fare + passengers.ASC_rs
     
     return U_rs
 

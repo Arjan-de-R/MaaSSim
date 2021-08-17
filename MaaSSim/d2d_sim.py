@@ -47,8 +47,8 @@ def D2D_summary(**kwargs):
     corr_wait_time.columns = list(range(len(travs)))
     perc_wait = pd.concat([travs[i].init_perc_wait for i in range(len(travs))], axis=1)
     perc_wait.columns = list(range(len(travs)))
-#     mode_day = pd.concat([travs[i].mode_day for i in range(len(travs))], axis=1)
-#     mode_day.columns = list(range(len(travs)))
+    mode = pd.concat([travs[i]['mode'] for i in range(len(travs))], axis=1)
+    mode.columns = list(range(len(travs)))
     evol_micro.demand = DotMap()
     evol_micro.demand.inform = inform
     evol_micro.demand.requests = requests
@@ -58,10 +58,15 @@ def D2D_summary(**kwargs):
     evol_micro.demand.wait_time = wait_time
     evol_micro.demand.corr_wait_time = corr_wait_time
     evol_micro.demand.perc_wait = perc_wait
+    evol_micro.demand.bike = (mode == 'bike')
+    evol_micro.demand.car = (mode == 'car')
+    evol_micro.demand.pt = (mode == 'pt')
     evol_agg.demand = pd.DataFrame(
         {'inform': evol_micro.demand.inform.sum(), 'requests': evol_micro.demand.requests.sum(),
          'gets_offer': evol_micro.demand.gets_offer.sum(), 'accepts_offer': evol_micro.demand.accepts_offer.sum(),
-         'mean_wait': evol_micro.demand.wait_time.mean(), 'corr_mean_wait': evol_micro.demand.corr_wait_time.mean(), 'perc_wait': evol_micro.demand.perc_wait.mean()})
+         'mean_wait': evol_micro.demand.wait_time.mean(), 'corr_mean_wait': evol_micro.demand.corr_wait_time.mean(),
+         'perc_wait': evol_micro.demand.perc_wait.mean(), 'bike': evol_micro.demand.bike.sum(),
+         'car': evol_micro.demand.car.sum(), 'pt': evol_micro.demand.pt.sum()})
     evol_agg.demand.index.name = 'day'
 
     return evol_micro, evol_agg

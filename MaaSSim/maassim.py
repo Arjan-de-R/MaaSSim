@@ -316,3 +316,30 @@ class Simulator:
     def plot_trip(self, pax_id, run_id=None):
         from MaaSSim.visualizations import plot_trip
         plot_trip(self,pax_id, run_id = run_id)
+
+
+    def dump_d2d(self, path=None, dump_id=None, day = 0, csv_zip = None, results=True, inputs=True):
+        """
+        stores resulting files into .zip folder
+        :param path:
+        :param id: run id
+        :param inputs: store input files (vehicles, passengers, platforms)
+        :param results: stor output files (trips, rides, veh, pax KPIs)
+        :return: zip file
+        """
+        if path is None:
+            path = os.getcwd()
+        Path(path).mkdir(parents=True, exist_ok=True)
+        dump_id = self.run_ids[-1] if dump_id is None else dump_id
+
+        # with zipfile.ZipFile(os.path.join(path, 'res{}.zip'.format(dump_id)), 'w') as csv_zip:
+        if inputs:
+            for data in ['vehicles', 'passengers', 'requests', 'platforms']:
+                csv_zip.writestr("day_{}_{}.csv".format(str(day), data), self.inData[data].to_csv())
+        if results:
+            csv_zip.writestr("day_{}_{}.csv".format(str(day), 'trips'), self.runs[day].trips.to_csv())
+            csv_zip.writestr("day_{}_{}.csv".format(str(day), 'rides'), self.runs[day].rides.to_csv())
+            for key in self.res[0].keys():
+                csv_zip.writestr("day_{}_{}.csv".format(str(day), key), self.res[day][key].to_csv())
+
+        return csv_zip
