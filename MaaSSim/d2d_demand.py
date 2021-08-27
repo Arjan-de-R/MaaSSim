@@ -119,7 +119,8 @@ def wom_trav(inData, end_day, **kwargs):
     "determine which travellers are informed before the start of the new day"
     params = kwargs.get('params', None)
     exp_inf_trav = end_day.loc[end_day.informed]
-    average_perc_wait = exp_inf_trav.new_perc_wait.mean()
+    average_perc_wait = exp_inf_trav.new_perc_wait.mean() / 60
+    signal = (np.random.lognormal(params.evol.travellers.inform.mu_log, np.sqrt(2 * (np.log(average_perc_wait) - params.evol.travellers.inform.mu_log)), len(inData.passengers))) * 60
     nP_inf = inData.passengers.informed.sum()
     nP_uninf = len(inData.passengers) - nP_inf
 
@@ -133,7 +134,10 @@ def wom_trav(inData, end_day, **kwargs):
     prev_inf = inData.passengers.informed.to_numpy()
     informed = (np.concatenate(([prev_inf],[new_inf]),axis=0).transpose()).any(axis=1)
     res_inf = pd.DataFrame(data = {'informed': informed, 'perc_wait': end_day.new_perc_wait}, index=np.arange(0,len(inData.passengers)))
-    res_inf.loc[(res_inf.informed) & (~end_day.informed),'perc_wait'] = average_perc_wait
+    res_inf['signal'] = signal
+    res_inf['cond'] = res_inf.informed & (~end_day.informed)
+    res_inf['perc_wait'] = res_inf['perc_wait'].where(~res_inf.cond, res_inf['signal'])
+    res_inf.drop(['signal', 'cond'], axis=1)
 
     return res_inf
 
