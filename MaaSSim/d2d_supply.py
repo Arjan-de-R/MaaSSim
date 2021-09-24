@@ -98,10 +98,10 @@ def update_d2d_drivers(*args, **kwargs):
 #     experienced_driver = (ret.worked_days >= params.evol.drivers.omega).astype(int)
 #     kappa = (experienced_driver / params.evol.drivers.omega + (1 - experienced_driver) / (ret.worked_days + 1)) * (1 - ret.out)
 #     new_perc_inc = (1 - kappa) * ret.init_perc_inc + kappa * ret.exp_inc
-    new_perc_inc = learning_drivers(params = params, prev_perc = ret.init_perc_inc, exp = ret.exp_inc, out = ret.out)
+    new_perc_inc = learning_drivers(params = params, prev_perc = ret.init_perc_inc, exp = ret.exp_inc.fillna(0), out = ret.out)
     
     ret['new_perc_inc'] = new_perc_inc.to_numpy()
-    ret.loc[(ret.registered) & (ret.out), 'new_perc_inc'] = ret.loc[(ret.registered) & (ret.out), 'init_perc_inc']
+    # ret.loc[(ret.registered) & (ret.out), 'new_perc_inc'] = ret.loc[(ret.registered) & (ret.out), 'init_perc_inc']
     cols = list(ret.columns)
     a, b = cols.index('new_perc_inc'), cols.index('worked_days')
     cols[b], cols[a] = cols[a], cols[b]
@@ -125,20 +125,50 @@ def wom_driver(inData, **kwargs):
     new_inf = np.random.rand(params.nV) < prob_inf
     prev_inf = inData.vehicles.informed.to_numpy()
     informed = (np.concatenate(([prev_inf],[new_inf]),axis=0).transpose()).any(axis=1)
-    res_inf = pd.DataFrame(data = {'informed': informed}, index=np.arange(1,params.nV+1))
+    res_inf = pd.DataFrame(data={'informed': informed}, index=np.arange(1,params.nV+1))
 
     return res_inf
+
+
+def learning_unregist(inData, end_day, **kwargs):
+    "determine new perceived income of informed, yet unregistered drivers, based on signal with noise"
+    params = kwargs.get('params', None)
+    exp_reg_drivers = end_day.loc[end_day.registered]
+    average_perc_income = exp_reg_drivers.new_perc_inc.mean()
+    signal = np.random.normal(average_perc_income,params.evol.drivers.inform.signal_rel_std * average_perc_income,len(inData.vehicles))
+    cond_new_inf = inData.vehicles.informed & ~inData.vehicles.registered & end_day.new_perc_inc.isna()
+    cond_prev_inf = inData.vehicles.informed & ~inData.vehicles.registered & ~end_day.new_perc_inc.isna()
+    new_perc_inc = end_day.new_perc_inc * (1-params.evol.drivers.kappa) + signal * params.evol.drivers.kappa
+
+    ## LEARNING
+    # if NaN (just informed), new_perc_inc = signal
+    # if informed before, but not registered, X% for new signal
+
+    df = pd.DataFrame(data={'expected_income': end_day.new_perc_inc, 'signal': signal, 'perc_inc': new_perc_inc, 'cond_new_inf': cond_new_inf, 'cond_prev_inf': cond_prev_inf}, index=np.arange(1,params.nV+1))
+    df['expected_income'] = df['expected_income'].where(~df.cond_new_inf, df['signal'])
+    df['expected_income'] = df['expected_income'].where(~df.cond_prev_inf, df['perc_inc'])
+
+    return df
+
+    # df = pd.DataFrame(
+        # data={'inform': inData.vehicles.informed, 'prev_regist': end_day.registered, 'work_exp': end_day.worked_days,
+              # 'expected_income': end_day.new_perc_inc}, index=np.arange(1, len(inData.vehicles) + 1))
+
+
+
+
 
 def platform_regist(inData, end_day, **kwargs):
     "determine probability of registering at platform overnight for all unregistered drivers"
     params = kwargs.get('params', None)
-    exp_reg_drivers = end_day.loc[end_day.registered]
-    average_perc_income = exp_reg_drivers.new_perc_inc.mean()
+    # exp_reg_drivers = end_day.loc[end_day.registered]
+    # average_perc_income = exp_reg_drivers.new_perc_inc.mean()
 
     regist_df = pd.DataFrame(data={'inform': inData.vehicles.informed, 'prev_regist': end_day.registered, 'work_exp': end_day.worked_days, 'expected_income': end_day.new_perc_inc},index=np.arange(1,len(inData.vehicles)+1))
-    regist_df.loc[~regist_df.prev_regist, ['expected_income']] = average_perc_income
+    # regist_df.loc[~regist_df.prev_regist, ['expected_income']] = average_perc_income
     regist_df['decis'] = pd.Series(np.random.rand(params.nV) <= params.evol.drivers.regist.samp) # Sample of drivers making (de)registration decision
-    regist_df.loc[((regist_df.work_exp < 5) & (regist_df.prev_regist)) | (~regist_df.inform), 'decis'] = False
+    # regist_df.loc[((regist_df.work_exp < 5) & (regist_df.prev_regist)) | (~regist_df.inform), 'decis'] = False
+    regist_df.loc[regist_df.prev_regist | (~regist_df.inform), 'decis'] = False
 
     # Probability to participate
     util_ptcp = params.evol.drivers.particip.beta * regist_df.expected_income.to_numpy()
@@ -155,8 +185,8 @@ def platform_regist(inData, end_day, **kwargs):
 
     prev_regist = inData.vehicles.registered.to_numpy()
     registered = (np.concatenate(([prev_regist], [regist_decision]), axis=0).transpose()).any(axis=1)
-    regist_res = pd.DataFrame(data={'registered': registered, 'expected_income': end_day.new_perc_inc})
-    regist_res.loc[((~inData.vehicles.registered) & (regist_res.registered)), ['expected_income']] = average_perc_income
+    regist_res = pd.DataFrame(data={'registered': registered}, index=np.arange(1,len(inData.vehicles)+1))
+    # regist_res.loc[((~inData.vehicles.registered) & (regist_res.registered)), ['expected_income']] = average_perc_income
     # samp = np.random.rand(params.nV) <= params.evol.drivers.regist.samp   # Sample of drivers making registration choice
 
     # # Probability to participate
@@ -195,7 +225,8 @@ def learning_drivers(params, out, prev_perc, exp):
     "returns new perceived income of group of drivers"
     kappa = params.evol.drivers.kappa * (1 - out)
 #     kappa = (experienced_driver / params.evol.drivers.omega + (1 - experienced_driver) / (ret.worked_days + 1)) * (1 - ret.out)
-    
+
+
     new_perc = (1 - kappa) * prev_perc + kappa * exp
     
     return new_perc
