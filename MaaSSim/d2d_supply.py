@@ -24,6 +24,9 @@ def generate_vehicles_d2d(_inData, _params=None):
     vehs['registered'] = (np.random.rand(_params.nV) < _params.evol.drivers.regist.prob_start) & vehs.informed
     vehs.loc[
         vehs.registered, "expected_income"] = _params.evol.drivers.init_inc_ratio * _params.evol.drivers.res_wage.mean
+    vehs['work_exp'] = np.nan
+    vehs.loc[vehs.registered, "work_exp"] = 0
+    vehs.work_exp.astype('int32')
 
     return vehs
 
@@ -82,8 +85,8 @@ def update_d2d_drivers(*args, **kwargs):
     sim = kwargs.get('sim',None)
     params = kwargs.get('params',None)
     run_id = len(sim.res)-1
-    hist = pd.concat([~sim.res[_]['veh_exp'].OUT for _ in range(0,run_id+1)],axis=1,ignore_index=True)
-    worked_days = hist.sum(axis=1)
+    # hist = pd.concat([~sim.res[_]['veh_exp'].OUT for _ in range(0,run_id+1)],axis=1,ignore_index=True)
+    # worked_days = hist.sum(axis=1)
 
     ret = pd.DataFrame()
     ret['veh'] = np.arange(1,params.nV+1)
@@ -94,7 +97,7 @@ def update_d2d_drivers(*args, **kwargs):
     ret['init_perc_inc'] = sim.vehicles.expected_income.to_numpy()
     ret['exp_inc'] = sim.res[run_id].veh_exp.NET_INCOME.to_numpy()
     ret.loc[ret.out, 'exp_inc'] = np.nan
-    ret['worked_days'] = worked_days.to_numpy()
+    # ret['worked_days'] = worked_days.to_numpy()
 #     experienced_driver = (ret.worked_days >= params.evol.drivers.omega).astype(int)
 #     kappa = (experienced_driver / params.evol.drivers.omega + (1 - experienced_driver) / (ret.worked_days + 1)) * (1 - ret.out)
 #     new_perc_inc = (1 - kappa) * ret.init_perc_inc + kappa * ret.exp_inc
@@ -103,8 +106,8 @@ def update_d2d_drivers(*args, **kwargs):
     ret['new_perc_inc'] = new_perc_inc.to_numpy()
     # ret.loc[(ret.registered) & (ret.out), 'new_perc_inc'] = ret.loc[(ret.registered) & (ret.out), 'init_perc_inc']
     cols = list(ret.columns)
-    a, b = cols.index('new_perc_inc'), cols.index('worked_days')
-    cols[b], cols[a] = cols[a], cols[b]
+    # a, b = cols.index('new_perc_inc'), cols.index('worked_days')
+    # cols[b], cols[a] = cols[a], cols[b]
     ret = ret[cols]
     ret = ret.set_index('veh')
 
@@ -164,7 +167,7 @@ def platform_regist(inData, end_day, **kwargs):
     # exp_reg_drivers = end_day.loc[end_day.registered]
     # average_perc_income = exp_reg_drivers.new_perc_inc.mean()
 
-    regist_df = pd.DataFrame(data={'inform': inData.vehicles.informed, 'prev_regist': end_day.registered, 'work_exp': end_day.worked_days, 'expected_income': end_day.new_perc_inc},index=np.arange(1,len(inData.vehicles)+1))
+    regist_df = pd.DataFrame(data={'inform': inData.vehicles.informed, 'prev_regist': end_day.registered, 'work_exp': inData.vehicles.work_exp, 'expected_income': end_day.new_perc_inc},index=np.arange(1,len(inData.vehicles)+1))
     # regist_df.loc[~regist_df.prev_regist, ['expected_income']] = average_perc_income
     regist_df['decis'] = pd.Series(np.random.rand(params.nV) <= params.evol.drivers.regist.samp) # Sample of drivers making (de)registration decision
     # regist_df.loc[((regist_df.work_exp < 5) & (regist_df.prev_regist)) | (~regist_df.inform), 'decis'] = False
@@ -181,13 +184,16 @@ def platform_regist(inData, end_day, **kwargs):
                 inData.vehicles.res_wage.to_numpy() * prob_d_ptcp + params.evol.drivers.regist.cost_comp)
     prob_regist_util = np.exp(util_reg) / (np.exp(util_reg) + np.exp(util_not_reg))
     satisfied = np.random.rand(params.nV) < prob_regist_util
-    regist_decision = satisfied & regist_df.decis
-    deregist_decision = ~satisfied & regist_df.decis & (regist_df.work_exp >= 5)
+    regist_df['regist_decision'] = satisfied & regist_df.decis
+    regist_df['deregist_decision'] = ~satisfied & regist_df.decis & (regist_df.work_exp >= 5)
 
     prev_regist = inData.vehicles.registered.to_numpy()
-    still_regist = prev_regist * (~deregist_decision)
-    registered = (np.concatenate(([still_regist], [regist_decision]), axis=0).transpose()).any(axis=1)
-    regist_res = pd.DataFrame(data={'registered': registered}, index=np.arange(1,len(inData.vehicles)+1))
+    still_regist = prev_regist * (~regist_df.deregist_decision)
+    registered = (np.concatenate(([still_regist], [regist_df.regist_decision]), axis=0).transpose()).any(axis=1)
+
+    regist_df['work_exp'][regist_df.deregist_decision] = np.nan
+    regist_df['work_exp'][regist_df.regist_decision] = 0
+    regist_res = pd.DataFrame(data={'registered': registered, 'work_exp': regist_df.work_exp}, index=np.arange(1,len(inData.vehicles)+1))
     # regist_res.loc[((~inData.vehicles.registered) & (regist_res.registered)), ['expected_income']] = average_perc_income
     # samp = np.random.rand(params.nV) <= params.evol.drivers.regist.samp   # Sample of drivers making registration choice
 
@@ -232,3 +238,10 @@ def learning_drivers(params, out, prev_perc, exp):
     new_perc = (1 - kappa) * prev_perc + kappa * exp
     
     return new_perc
+
+def update_work_exp(inData, end_day):
+    df = inData.vehicles.copy()
+    df['out'] = end_day.out
+    df.loc[~df.out, "work_exp"] = df.work_exp + 1
+
+    return df
