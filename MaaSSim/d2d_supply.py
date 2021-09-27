@@ -168,7 +168,8 @@ def platform_regist(inData, end_day, **kwargs):
     # regist_df.loc[~regist_df.prev_regist, ['expected_income']] = average_perc_income
     regist_df['decis'] = pd.Series(np.random.rand(params.nV) <= params.evol.drivers.regist.samp) # Sample of drivers making (de)registration decision
     # regist_df.loc[((regist_df.work_exp < 5) & (regist_df.prev_regist)) | (~regist_df.inform), 'decis'] = False
-    regist_df.loc[regist_df.prev_regist | (~regist_df.inform), 'decis'] = False
+    # regist_df.loc[regist_df.prev_regist | (~regist_df.inform), 'decis'] = False
+    regist_df.loc[~regist_df.inform, 'decis'] = False
 
     # Probability to participate
     util_ptcp = params.evol.drivers.particip.beta * regist_df.expected_income.to_numpy()
@@ -181,10 +182,11 @@ def platform_regist(inData, end_day, **kwargs):
     prob_regist_util = np.exp(util_reg) / (np.exp(util_reg) + np.exp(util_not_reg))
     satisfied = np.random.rand(params.nV) < prob_regist_util
     regist_decision = satisfied & regist_df.decis
-    # deregist_decision = ~satisfied & regist_df.decis
+    deregist_decision = ~satisfied & regist_df.decis & (regist_df.work_exp >= 5)
 
     prev_regist = inData.vehicles.registered.to_numpy()
-    registered = (np.concatenate(([prev_regist], [regist_decision]), axis=0).transpose()).any(axis=1)
+    still_regist = prev_regist * (~deregist_decision)
+    registered = (np.concatenate(([still_regist], [regist_decision]), axis=0).transpose()).any(axis=1)
     regist_res = pd.DataFrame(data={'registered': registered}, index=np.arange(1,len(inData.vehicles)+1))
     # regist_res.loc[((~inData.vehicles.registered) & (regist_res.registered)), ['expected_income']] = average_perc_income
     # samp = np.random.rand(params.nV) <= params.evol.drivers.regist.samp   # Sample of drivers making registration choice
