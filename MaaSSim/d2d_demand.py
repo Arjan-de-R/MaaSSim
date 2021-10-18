@@ -2,6 +2,94 @@ from MaaSSim.traveller import travellerEvent
 import pandas as pd
 import numpy as np
 import math
+import os
+
+
+def load_albatross_proc(_inData, _params, avg_speed=False):
+    # loads the full csv of albatross for a given city
+    # changes date for today
+    # filters for simulation time (t0 hour + simTime)
+    # samples the n
+
+    df = pd.read_csv(os.path.join(_params.paths.albatross,
+                                  _params.city.split(",")[0] + "_requests_proc.csv"),
+                     index_col= 'Unnamed: 0')
+    df.rename(columns={'Unnamed: 0': 'pax_id'}, inplace=True)
+
+    df['treq'] = pd.to_datetime(df['treq'])
+#     df.treq = df.treq + (_params.t0.date() - df.treq.iloc[0].date())
+    df['tarr'] = pd.to_datetime(df['tarr'])
+#     df.tarr = df.tarr + (_params.t0.date() - df.tarr.iloc[0].date())
+    # sample within simulation time
+#     df = df[df.treq.dt.hour >= _params.t0.hour]
+#     df = df[df.treq.dt.hour <= (_params.t0.hour + _params.simTime)]
+#     df['dist'] = df.apply(lambda request: _inData.skim.loc[request.origin, request.destination], axis=1)
+#     df = df[df.dist < _params.dist_threshold]
+#     df = df[df.dist > _params.dist_threshold_min]
+
+#     if sample:
+#         df = df.sample(_params.nP)
+
+    df['ttrav_alb'] = pd.to_timedelta(df.ttrav)
+    df['ttrav'] = df.apply(lambda request: pd.Timedelta(request.dist, 's').floor('s'), axis=1)
+    if avg_speed:
+        df.ttrav = (pd.to_timedelta(df.ttrav) / _params.speeds.ride).dt.floor('1s')
+
+    missing_col = list(set(_inData.requests.columns.values.tolist()).difference(df.columns.values.tolist()))
+    df = df.reindex(columns=df.columns.tolist() + missing_col)
+    #     df = df.reindex(columns=[*df.columns.tolist(), *missing_col], fill_value=np.nan)
+#     df = df.reset_index(drop=True)
+    df.pax_id = df.index
+    df.schedule_id = df.index
+    df.shareable = False
+
+    _inData.requests = df
+
+    _inData.passengers.pos = _inData.requests.origin
+    _inData.passengers.event = travellerEvent.STARTS_DAY
+    #     _inData.passengers = generic_generator(generate_passenger,_params.nP).reindex(_inData.requests.index)
+    _inData.passengers.platforms = _inData.passengers.platforms.apply(lambda x: [0])
+
+    return _inData
+
+
+def load_OTP_result(_params):
+    # loads the attributes of the recommended PT initeraries
+
+    df = pd.read_csv(os.path.join(_params.paths.albatross,
+                                    _params.city.split(",")[0]+"_requests_PT.csv"),
+                 index_col = 'id')
+
+#     df = df.reset_index(drop=True)
+    df['pax_id'] = df.index
+    cols = df.columns.tolist()
+    cols = cols[-1:] + cols[:-1]
+    df = df[cols]
+
+    # 7d-1. Determine distance for all PT legs
+    # Split mode information in separate legs
+    legs = df['modes'].str.replace(r'[','')
+    legs = legs.str.split(']', expand=True)
+    for column in range(len(legs.columns)):
+        legs[column] = legs[column].str.lstrip(', ')  # Remove leading commas
+        # Set PT distance for walk segments and empty segments to zero (not part of fare calculation), and extract distance for PT legs
+        legs[column].fillna('', inplace=True)
+        legs[column] = np.where(((legs[column].str.contains('WALK')==True) | (legs[column] == '')), 0, legs[column].str.split(',').str[2])
+        legs[column] = legs[column].astype(int)
+    # Calculate total PT distance
+    legs['PTdistance'] = legs.sum(axis=1, skipna=True)
+    df = df.merge(legs['PTdistance'], how='left', left_index=True, right_index=True)
+    # 7d-2. Calculate fare
+    df['PTfare'] = round((df['PTdistance'] * (1/1000) * _params.alt_modes.pt.km_fare) + _params.alt_modes.pt.base_fare,2)
+    df.loc[(df['PTdistance'] == 0), 'PTfare'] = 9999  # If only walking is used, set PT fare to zero
+    # req['PT_itinerary'] = otp.modes.copy()
+    # req['PT_walk_time'] =
+    # req['PT_wait_time'] = 
+    # req['PT_transfers'] = otp.transfers.copy()
+    # req['PT_fare'] = otp.PTfare.copy()
+    
+    return df
+
 
 
 def d2d_kpi_pax(*args ,**kwargs):
@@ -116,11 +204,11 @@ def d2d_no_request(*args, **kwargs):
 
 
 def wom_trav(inData, end_day, **kwargs):
-    "determine which travellers are informed before the start of the new day"
+    "determine which travellers are informed and the waiting time that is communicated before the start of the new day"
     params = kwargs.get('params', None)
     exp_inf_trav = end_day.loc[end_day.informed]
-    average_perc_wait = exp_inf_trav.new_perc_wait.mean() / 60
-    signal = (np.random.lognormal(params.evol.travellers.inform.mu_log, np.sqrt(2 * (np.log(average_perc_wait) - params.evol.travellers.inform.mu_log)), len(inData.passengers))) * 60
+    average_xp_wait = exp_inf_trav.corr_xp_wait.mean() / 60
+    signal = (np.random.lognormal(params.evol.travellers.inform.mu_log, np.sqrt(2 * (np.log(average_xp_wait) - params.evol.travellers.inform.mu_log)), len(inData.passengers))) * 60
     nP_inf = inData.passengers.informed.sum()
     nP_uninf = len(inData.passengers) - nP_inf
 
@@ -290,6 +378,7 @@ def util_alt_modes(inData, params):
     "determine utility of alternative modes for group of travellers"
     passengers = inData.passengers
     requests = inData.requests
+    pt_its = inData.pt_itinerary
     prefs = params.mode_choice
     props = params.alt_modes
     
@@ -301,14 +390,18 @@ def util_alt_modes(inData, params):
     # Attributes of modes
     car_ivt = requests.ttrav.dt.total_seconds()  # assumed same as RS
     car_cost = props.car.km_cost * car_ivt * (params.speeds.ride / 1000) + props.car.park_cost
-    pt_ivt = requests.ttrav.dt.total_seconds()  * (params.speeds.ride / params.speeds.pt)
-    pt_fare = props.pt.base_fare + props.pt.km_fare * pt_ivt * (params.speeds.ride / 1000)
+#     pt_ivt = requests.ttrav.dt.total_seconds()  * (params.speeds.ride / params.speeds.pt)
+    pt_ivt = pt_its.transitTime
+#     pt_fare = props.pt.base_fare + props.pt.km_fare * pt_ivt * (params.speeds.ride / 1000)
+    pt_fare = pt_its.PTfare
+    pt_wait = pt_its.waitingTime
+    pt_access = pt_its.walkDistance / params.speeds.walk
     bike_tt = requests.ttrav.dt.total_seconds()  * (params.speeds.ride / params.speeds.bike)
 
     # Utilities
     U_bike = prefs.beta_time_bike * bike_tt + ASC_bike
     U_car = prefs.beta_access * props.car.access_time + prefs.beta_time_moto * car_ivt + prefs.beta_cost * car_cost + ASC_car
-    U_pt = prefs.beta_access * props.pt.access_time + prefs.beta_wait_pt * props.pt.wait_time + prefs.beta_time_moto * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
+    U_pt = prefs.beta_access * pt_access + prefs.beta_wait_pt * pt_wait + prefs.beta_time_moto * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
     utils = pd.DataFrame({'bike': U_bike, 'car': U_car, 'pt': U_pt})
     
     return utils

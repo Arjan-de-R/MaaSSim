@@ -26,7 +26,7 @@ def generate_vehicles_d2d(_inData, _params=None):
         vehs.registered, "expected_income"] = _params.evol.drivers.init_inc_ratio * _params.evol.drivers.res_wage.mean
     vehs['work_exp'] = np.nan
     vehs.loc[vehs.registered, "work_exp"] = 0
-    vehs.work_exp.astype('int32')
+    # vehs.work_exp = vehs.work_exp.astype('Int64')
 
     return vehs
 
@@ -97,10 +97,6 @@ def update_d2d_drivers(*args, **kwargs):
     ret['init_perc_inc'] = sim.vehicles.expected_income.to_numpy()
     ret['exp_inc'] = sim.res[run_id].veh_exp.NET_INCOME.to_numpy()
     ret.loc[ret.out, 'exp_inc'] = np.nan
-    # ret['worked_days'] = worked_days.to_numpy()
-#     experienced_driver = (ret.worked_days >= params.evol.drivers.omega).astype(int)
-#     kappa = (experienced_driver / params.evol.drivers.omega + (1 - experienced_driver) / (ret.worked_days + 1)) * (1 - ret.out)
-#     new_perc_inc = (1 - kappa) * ret.init_perc_inc + kappa * ret.exp_inc
     new_perc_inc = learning_drivers(params = params, prev_perc = ret.init_perc_inc, exp = ret.exp_inc.fillna(0), out = ret.out)
     
     ret['new_perc_inc'] = new_perc_inc.to_numpy()
@@ -136,9 +132,9 @@ def wom_driver(inData, **kwargs):
 def learning_unregist(inData, end_day, **kwargs):
     "determine new perceived income of informed, yet unregistered drivers, based on signal with noise"
     params = kwargs.get('params', None)
-    exp_reg_drivers = end_day.loc[end_day.registered]
-    average_perc_income = exp_reg_drivers.new_perc_inc.mean()
-    signal = np.random.normal(average_perc_income,params.evol.drivers.inform.signal_rel_std * average_perc_income,len(inData.vehicles))
+    exp_reg_drivers = end_day[end_day.registered]
+    average_xp_income = exp_reg_drivers.exp_inc.mean()
+    signal = np.random.normal(average_xp_income,params.evol.drivers.inform.signal_rel_std * average_xp_income,len(inData.vehicles))
     cond_new_inf = inData.vehicles.informed & ~inData.vehicles.registered & end_day.new_perc_inc.isna()
     cond_prev_inf = inData.vehicles.informed & ~inData.vehicles.registered & ~end_day.new_perc_inc.isna()
     new_perc_inc = end_day.new_perc_inc * (1-params.evol.drivers.kappa) + signal * params.evol.drivers.kappa
