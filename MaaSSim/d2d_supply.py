@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import math
 import random
+from scipy.special import erfinv
 
 # Generation
 def generate_vehicles_d2d(_inData, _params=None):
@@ -18,12 +19,13 @@ def generate_vehicles_d2d(_inData, _params=None):
     vehs = generate_vehicles(_inData, _params.nV)
 
     vehs.expected_income = np.nan
-    vehs['res_wage'] = np.random.normal(_params.evol.drivers.res_wage.mean, _params.evol.drivers.res_wage.std,
-                                        _params.nV)
+    lognorm_std = 2 * erfinv(_params.evol.drivers.gini)
+    lognorm_mean = np.log(_params.evol.drivers.res_wage.mean) - (lognorm_std ** 2) / 2
+
+    vehs['res_wage'] = np.random.lognormal(lognorm_mean, lognorm_std, _params.nV) * _params.simTime
     vehs['informed'] = (np.random.rand(_params.nV) < _params.evol.drivers.inform.prob_start)
     vehs['registered'] = (np.random.rand(_params.nV) < _params.evol.drivers.regist.prob_start) & vehs.informed
-    vehs.loc[
-        vehs.registered, "expected_income"] = _params.evol.drivers.init_inc_ratio * _params.evol.drivers.res_wage.mean
+    vehs.loc[vehs.registered, "expected_income"] = _params.evol.drivers.init_inc_ratio * vehs.res_wage.mean()
     vehs['work_exp'] = np.nan
     vehs.loc[vehs.registered, "work_exp"] = 0
     # vehs.work_exp = vehs.work_exp.astype('Int64')

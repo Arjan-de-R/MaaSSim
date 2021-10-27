@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import math
 import os
+from scipy.special import erfinv
+import osmnx as ox
 
 
 def load_albatross_proc(_inData, _params, avg_speed=False):
@@ -285,10 +287,12 @@ def wom_trav(inData, end_day, **kwargs):
 
 def prefs_travs(inData, params):
     "draw mode preferences for the group of travellers"
-    prefs = params.mode_choice
+    prefs = params.evol.travellers.mode_pref
     passengers = inData.passengers
-    
-    utils = util_alt_modes(inData, params)
+
+    vot, utils = util_alt_modes(inData, params)
+
+    passengers['VoT'] = vot
     passengers['U_bike'] = utils.bike
     passengers['U_car'] = utils.car
     passengers['U_pt'] = utils.pt
@@ -313,6 +317,7 @@ def mode_filter(inData, params):
     probabilities.loc[probabilities.rs > params.evol.travellers.min_prob, "decis"] = 'day-to-day'
 
     passengers['mode_choice'] = probabilities.decis
+    passengers['prob_rs'] = probabilities.rs
     
     return passengers
     
@@ -378,33 +383,47 @@ def util_alt_modes(inData, params):
     "determine utility of alternative modes for group of travellers"
     passengers = inData.passengers
     requests = inData.requests
-    pt_its = inData.pt_itinerary
-    prefs = params.mode_choice
+    pt_itins = inData.pt_itinerary
+    prefs = params.evol.travellers.mode_pref
     props = params.alt_modes
-    
+
+    # Draw Value of Time and corresponding beta's for travellers
+    lognorm_std = 2 * erfinv(prefs.gini)
+    lognorm_mean = np.log(prefs.mean_vot) - (lognorm_std ** 2) / 2
+    vot = np.random.lognormal(lognorm_mean, lognorm_std, params.nP)  # euro/h
+    beta_ivt = vot * prefs.beta_cost / 3600
+    beta_access = beta_ivt * prefs.access_multip
+    beta_wait = beta_ivt * prefs.wait_multip
+    beta_bike_time = beta_ivt * prefs.bike_multip
+
     # Draw mode preferences (ASCs) for travellers
-    ASC_car = np.random.normal(prefs.ASC_car,prefs.ASC_car_sd,params.nP)
-    ASC_pt = np.random.normal(prefs.ASC_pt,prefs.ASC_pt_sd,params.nP)
-    ASC_bike = np.random.normal(0,prefs.ASC_bike_sd,params.nP)
+    ASC_car = np.random.normal(prefs.ASC_car, prefs.ASC_car_sd, params.nP)
+    ASC_pt = np.random.normal(prefs.ASC_pt, prefs.ASC_pt_sd, params.nP)
+    ASC_bike = np.random.normal(0, prefs.ASC_bike_sd, params.nP)
     
     # Attributes of modes
     car_ivt = requests.ttrav.dt.total_seconds()  # assumed same as RS
-    car_cost = props.car.km_cost * car_ivt * (params.speeds.ride / 1000) + props.car.park_cost
+    requests['car_park_cost'] = props.car.park_cost
+    if props.car.diff_parking:
+        requests['dest_center'] = requests.apply(lambda x: inData.nodes.center.loc[x.destination], axis=1)
+        requests.loc[requests.dest_center, 'car_park_cost'] = props.car.park_cost_center
+    car_cost = props.car.km_cost * car_ivt * (params.speeds.ride / 1000) + requests.car_park_cost
 #     pt_ivt = requests.ttrav.dt.total_seconds()  * (params.speeds.ride / params.speeds.pt)
-    pt_ivt = pt_its.transitTime
+    pt_trans_pen = pt_itins.transfers * prefs.transfer_pen
+    pt_ivt = pt_itins.transitTime + pt_trans_pen
 #     pt_fare = props.pt.base_fare + props.pt.km_fare * pt_ivt * (params.speeds.ride / 1000)
-    pt_fare = pt_its.PTfare
-    pt_wait = pt_its.waitingTime
-    pt_access = pt_its.walkDistance / params.speeds.walk
-    bike_tt = requests.ttrav.dt.total_seconds()  * (params.speeds.ride / params.speeds.bike)
+    pt_fare = pt_itins.PTfare
+    pt_wait = pt_itins.waitingTime
+    pt_access = pt_itins.walkDistance / params.speeds.walk
+    bike_tt = requests.ttrav.dt.total_seconds() * (params.speeds.ride / params.speeds.bike)
 
     # Utilities
-    U_bike = prefs.beta_time_bike * bike_tt + ASC_bike
-    U_car = prefs.beta_access * props.car.access_time + prefs.beta_time_moto * car_ivt + prefs.beta_cost * car_cost + ASC_car
-    U_pt = prefs.beta_access * pt_access + prefs.beta_wait_pt * pt_wait + prefs.beta_time_moto * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
+    U_bike = beta_bike_time * bike_tt + ASC_bike
+    U_car = beta_access * props.car.access_time + beta_ivt * car_ivt + prefs.beta_cost * car_cost + ASC_car
+    U_pt = beta_access * pt_access + beta_wait * pt_wait + beta_ivt * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
     utils = pd.DataFrame({'bike': U_bike, 'car': U_car, 'pt': U_pt})
     
-    return utils
+    return vot, utils
 
 
 def mode_probs(utils):
@@ -424,13 +443,15 @@ def mode_probs(utils):
 def util_rs(inData, params, rs_wait):
     passengers = inData.passengers
     requests = inData.requests
-    prefs = params.mode_choice
+    prefs = params.evol.travellers.mode_pref
     
     rs_ivt = requests.ttrav.dt.total_seconds()
     rs_fare = np.ones(len(inData.passengers)) * params.platforms.base_fare + params.platforms.fare * rs_ivt * (params.speeds.ride / 1000)
     rs_fare[rs_fare < params.platforms.min_fare] += params.platforms.min_fare
-    
-    U_rs = prefs.beta_wait_rs * rs_wait + prefs.beta_time_moto * rs_ivt + prefs.beta_cost * rs_fare + passengers.ASC_rs
+
+    beta_ivt = passengers.VoT * prefs.beta_cost / 3600
+    beta_wait = beta_ivt * prefs.wait_multip
+    U_rs = beta_wait * rs_wait + beta_ivt * rs_ivt + prefs.beta_cost * rs_fare + passengers.ASC_rs
     
     return U_rs
 
@@ -442,3 +463,13 @@ def learning_travs(params, prev_perc, exp):
     new_perc = (1 - kappa) * prev_perc + kappa * exp
     
     return new_perc
+
+
+def diff_parking(inData):
+    ox.config(log_console=True, use_cache=True)
+    Z = ox.graph_from_place('Centrum Amsterdam', network_type='drive')
+    Z_nodelist = list(Z.nodes)
+    inData.nodes['center'] = False
+    inData.nodes.loc[inData.nodes.index.isin(Z_nodelist), 'center'] = True
+
+    return inData
