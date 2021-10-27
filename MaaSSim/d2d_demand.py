@@ -19,19 +19,7 @@ def load_albatross_proc(_inData, _params, avg_speed=False):
     df.rename(columns={'Unnamed: 0': 'pax_id'}, inplace=True)
 
     df['treq'] = pd.to_datetime(df['treq'])
-#     df.treq = df.treq + (_params.t0.date() - df.treq.iloc[0].date())
     df['tarr'] = pd.to_datetime(df['tarr'])
-#     df.tarr = df.tarr + (_params.t0.date() - df.tarr.iloc[0].date())
-    # sample within simulation time
-#     df = df[df.treq.dt.hour >= _params.t0.hour]
-#     df = df[df.treq.dt.hour <= (_params.t0.hour + _params.simTime)]
-#     df['dist'] = df.apply(lambda request: _inData.skim.loc[request.origin, request.destination], axis=1)
-#     df = df[df.dist < _params.dist_threshold]
-#     df = df[df.dist > _params.dist_threshold_min]
-
-#     if sample:
-#         df = df.sample(_params.nP)
-
     df['ttrav_alb'] = pd.to_timedelta(df.ttrav)
     df['ttrav'] = df.apply(lambda request: pd.Timedelta(request.dist, 's').floor('s'), axis=1)
     if avg_speed:
@@ -39,8 +27,6 @@ def load_albatross_proc(_inData, _params, avg_speed=False):
 
     missing_col = list(set(_inData.requests.columns.values.tolist()).difference(df.columns.values.tolist()))
     df = df.reindex(columns=df.columns.tolist() + missing_col)
-    #     df = df.reindex(columns=[*df.columns.tolist(), *missing_col], fill_value=np.nan)
-#     df = df.reset_index(drop=True)
     df.pax_id = df.index
     df.schedule_id = df.index
     df.shareable = False
@@ -49,7 +35,6 @@ def load_albatross_proc(_inData, _params, avg_speed=False):
 
     _inData.passengers.pos = _inData.requests.origin
     _inData.passengers.event = travellerEvent.STARTS_DAY
-    #     _inData.passengers = generic_generator(generate_passenger,_params.nP).reindex(_inData.requests.index)
     _inData.passengers.platforms = _inData.passengers.platforms.apply(lambda x: [0])
 
     return _inData
@@ -62,13 +47,12 @@ def load_OTP_result(_params):
                                     _params.city.split(",")[0]+"_requests_PT.csv"),
                  index_col = 'id')
 
-#     df = df.reset_index(drop=True)
     df['pax_id'] = df.index
     cols = df.columns.tolist()
     cols = cols[-1:] + cols[:-1]
     df = df[cols]
 
-    # 7d-1. Determine distance for all PT legs
+    # Determine distance for all PT legs
     # Split mode information in separate legs
     legs = df['modes'].str.replace(r'[','')
     legs = legs.str.split(']', expand=True)
@@ -81,17 +65,11 @@ def load_OTP_result(_params):
     # Calculate total PT distance
     legs['PTdistance'] = legs.sum(axis=1, skipna=True)
     df = df.merge(legs['PTdistance'], how='left', left_index=True, right_index=True)
-    # 7d-2. Calculate fare
+    # Calculate fare
     df['PTfare'] = round((df['PTdistance'] * (1/1000) * _params.alt_modes.pt.km_fare) + _params.alt_modes.pt.base_fare,2)
     df.loc[(df['PTdistance'] == 0), 'PTfare'] = 9999  # If only walking is used, set PT fare to zero
-    # req['PT_itinerary'] = otp.modes.copy()
-    # req['PT_walk_time'] =
-    # req['PT_wait_time'] = 
-    # req['PT_transfers'] = otp.transfers.copy()
-    # req['PT_fare'] = otp.PTfare.copy()
     
     return df
-
 
 
 def d2d_kpi_pax(*args ,**kwargs):
@@ -170,11 +148,8 @@ def update_d2d_travellers(*args, **kwargs):
 
     ret['init_perc_wait'] = sim.passengers.expected_wait.to_numpy()
     ret['experience'] = days_with_exp.to_numpy()
-#     experienced_trav = (ret.experience >= params.evol.travellers.omega).astype(int)
-#     kappa = (experienced_trav / params.evol.travellers.omega + (1 - experienced_trav) / (ret.experience + 1)) * ret.requests.astype(int)
     ret['corr_xp_wait'] = ret.xp_wait.copy()
     ret.loc[(ret.requests & (~ret.gets_offer)),['corr_xp_wait']] = params.evol.travellers.reject_penalty
-#     new_perc_wait = (1 - kappa) * ret.init_perc_wait + kappa * ret.corr_xp_wait
     new_perc_wait = learning_travs(params = params, prev_perc = ret.init_perc_wait, exp = ret.corr_xp_wait)
 
     ret['new_perc_wait'] = new_perc_wait.to_numpy()
@@ -193,14 +168,8 @@ def update_d2d_travellers(*args, **kwargs):
 def d2d_no_request(*args, **kwargs):
     " returns True if traveller does not make RS request, False if he does"
     traveller = kwargs.get('pax',None)
-    sim = traveller.sim
-    params = sim.params
 
     trav_out = (traveller.pax.mode_day != "rs")
-#     rs_wait = traveller.pax.expected_wait
-
-#     rs_choice = mode_choice(traveller=traveller, rs_wait=rs_wait)
-#     trav_out = not rs_choice or not traveller.pax.informed
 
     return trav_out
 
@@ -231,59 +200,6 @@ def wom_trav(inData, end_day, **kwargs):
 
     return res_inf
 
-
-# def d2d_accept_offer(*args, **kwargs):
-#     # returns boolean True if passenger decides not to use (private) ridesourcing for given day (i.e. low quality offer)
-#     traveller = kwargs.get('traveller', None)
-#     sim = traveller.sim
-#
-#     platform_id, offer = list(traveller.offers.items())[0]
-#     rs_wait = sim.skims.ride.T[sim.vehs[offer['veh_id']].veh.pos][traveller.request.origin]
-#
-#     rs_choice = mode_choice(traveller=traveller, rs_wait=rs_wait)
-#
-#     return not rs_choice
-
-
-# def mode_choice(**kwargs):
-#     traveller = kwargs.get('traveller', None)
-#     sim = traveller.sim
-#     params = sim.params
-#     mcp = params.mode_choice
-#     mset = params.alt_modes
-#     rs_wait = kwargs.get('rs_wait')
-
-#     rs_ivt = traveller.request.ttrav.seconds
-#     rs_fare = max(params.platforms.base_fare + params.platforms.fare * rs_ivt * (params.speeds.ride / 1000),
-#                   params.platforms.min_fare)
-
-#     # Attributes of alternative modes
-# #     car_ivt = traveller.request.ttrav.seconds  # assumed same as RS
-# #     car_cost = mset.car.km_cost * car_ivt * (params.speeds.ride / 1000) + mset.car.park_cost
-# #     pt_ivt = traveller.request.ttrav.seconds  * (params.speeds.ride / params.speeds.pt)
-# #     pt_fare = mset.pt.base_fare + mset.pt.km_fare * pt_ivt * (params.speeds.ride / 1000)
-
-# #     bike_tt = sim.skims.ride.T[traveller.request.origin][traveller.request.destination] * (
-# #                 params.speeds.ride / params.speeds.bike)
-
-#     # Utilities
-#     U_rs = mcp.beta_wait_rs * rs_wait + mcp.beta_time_moto * rs_ivt + mcp.beta_cost * rs_fare + mcp.ASC_rs
-# #     U_car = mcp.beta_access * mset.car.access_time + mcp.beta_time_moto * car_ivt + mcp.beta_cost * car_cost + mcp.ASC_car
-# #     U_pt = mcp.beta_access * mset.pt.access_time + mcp.beta_wait_pt * mset.pt.wait_time + mcp.beta_time_moto * pt_ivt + mcp.beta_cost * pt_fare + mcp.ASC_pt
-# #     U_bike = mcp.beta_time_bike * bike_tt
-#     U_car = traveller.car
-#     U_pt = traveller.pt
-#     U_bike = traveller.bike
-#     U_list = [U_rs, U_car, U_pt, U_bike]
-#     exp_sum = np.exp(U_rs) + np.exp(U_car) + np.exp(U_pt) + np.exp(U_bike)
-
-#     # Decision
-#     P_list = [np.exp(U_list[mode_id]) / exp_sum for mode_id in range(len(U_list))]
-#     draw = np.cumsum(P_list) > random.random()
-#     decis = np.full((len(U_list)), False, dtype=bool)
-#     decis[np.argmax(draw)] = True
-
-#     return decis[0]
 
 def prefs_travs(inData, params):
     "draw mode preferences for the group of travellers"
@@ -320,45 +236,7 @@ def mode_filter(inData, params):
     passengers['prob_rs'] = probabilities.rs
     
     return passengers
-    
-#     # Draw mode preferences (ASCs) for travellers
-#     ASC_rs = np.random.normal(prefs.ASC_rs,prefs.ASC_rs_sd,params.nP)
-#     passengers['ASC_rs'] = ASC_rs
-#     ASC_car = np.random.normal(prefs.ASC_car,prefs.ASC_car_sd,params.nP)
-#     ASC_pt = np.random.normal(prefs.ASC_pt,prefs.ASC_pt_sd,params.nP)
-#     ASC_bike = np.random.normal(0,prefs.ASC_bike_sd,params.nP)
-    
-#     # Attributes of modes
-#     car_ivt = requests.ttrav.dt.total_seconds()  # assumed same as RS
-#     car_cost = props.car.km_cost * car_ivt * (params.speeds.ride / 1000) + props.car.park_cost
-#     pt_ivt = requests.ttrav.dt.total_seconds()  * (params.speeds.ride / params.speeds.pt)
-#     pt_fare = props.pt.base_fare + props.pt.km_fare * pt_ivt * (params.speeds.ride / 1000)
-#     bike_tt = requests.ttrav.dt.total_seconds()  * (params.speeds.ride / params.speeds.bike)
-#     rs_ivt = requests.ttrav.dt.total_seconds()
-#     rs_fare = np.ones(params.nP) * params.platforms.base_fare + params.platforms.fare * rs_ivt * (params.speeds.ride / 1000)
-#     rs_fare[rs_fare < params.platforms.min_fare] += params.platforms.min_fare
-#     rs_wait = np.zeros(params.nP)
-    
-#     # Determine utilities of modes
-#     passengers['U_bike'] = prefs.beta_time_bike * bike_tt + ASC_bike
-#     passengers['U_car'] = prefs.beta_access * props.car.access_time + prefs.beta_time_moto * car_ivt + prefs.beta_cost * car_cost + ASC_car
-#     passengers['U_pt'] = prefs.beta_access * props.pt.access_time + prefs.beta_wait_pt * props.pt.wait_time + prefs.beta_time_moto * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
-#     U_rs = prefs.beta_wait_rs * rs_wait + prefs.beta_time_moto * rs_ivt + prefs.beta_cost * rs_fare + prefs.ASC_rs
-#     exp_sum = np.exp(U_rs) + np.exp(passengers.U_car) + np.exp(passengers.U_pt) + np.exp(passengers.U_bike)
-# #     P_rs = np.exp(U_rs) / exp_sum
-#     prob_df = pd.DataFrame()
-#     prob_df['bike'] = np.exp(passengers.U_bike) / exp_sum
-#     prob_df['car'] = np.exp(passengers.U_car) / exp_sum
-#     prob_df['pt'] = np.exp(passengers.U_pt) / exp_sum
-#     prob_df['rs'] = 1 - prob_df.bike - prob_df.car - prob_df.pt
-#     cuml = prob_df.cumsum(axis=1)
-#     draw = cuml > random.random()
-#     prob_df['decis'] = draw.idxmax(axis="columns")
-#     prob_df.loc[prob_df.rs > params.evol.travellers.min_prob, "decis"] = 'day-to-day'
-    
-#     passengers['mode_choice'] = prob_df.decis
-    
-#     return inData.passengers
+
 
 def mode_preday(inData, params):
     "determine the mode at the start of a day for a pool of travellers"
@@ -408,10 +286,8 @@ def util_alt_modes(inData, params):
         requests['dest_center'] = requests.apply(lambda x: inData.nodes.center.loc[x.destination], axis=1)
         requests.loc[requests.dest_center, 'car_park_cost'] = props.car.park_cost_center
     car_cost = props.car.km_cost * car_ivt * (params.speeds.ride / 1000) + requests.car_park_cost
-#     pt_ivt = requests.ttrav.dt.total_seconds()  * (params.speeds.ride / params.speeds.pt)
     pt_trans_pen = pt_itins.transfers * prefs.transfer_pen
     pt_ivt = pt_itins.transitTime + pt_trans_pen
-#     pt_fare = props.pt.base_fare + props.pt.km_fare * pt_ivt * (params.speeds.ride / 1000)
     pt_fare = pt_itins.PTfare
     pt_wait = pt_itins.waitingTime
     pt_access = pt_itins.walkDistance / params.speeds.walk
@@ -459,7 +335,6 @@ def util_rs(inData, params, rs_wait):
 def learning_travs(params, prev_perc, exp):
     "returns new perceived waiting time of group of travellers"
     kappa = params.evol.travellers.kappa
-#     kappa = (experienced_driver / params.evol.drivers.omega + (1 - experienced_driver) / (ret.worked_days + 1)) * (1 - ret.out)
     new_perc = (1 - kappa) * prev_perc + kappa * exp
     
     return new_perc
