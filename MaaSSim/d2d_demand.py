@@ -348,3 +348,36 @@ def diff_parking(inData):
     inData.nodes.loc[inData.nodes.index.isin(Z_nodelist), 'center'] = True
 
     return inData
+
+
+def consist_OTP_alba(inData, params):
+    # Check consistency between Albatross and OTP data
+    inData.requests = inData.requests[inData.requests.index.isin(inData.pt_itinerary.index)]
+    inData.passengers = inData.passengers[inData.passengers.index.isin(inData.pt_itinerary.index)]
+    if params.nP > inData.requests.shape[0]:
+        factor = math.floor(params.nP / inData.requests.shape[0])
+        mod = params.nP % inData.requests.shape[0]
+        df_req = pd.concat(factor * [inData.requests])
+        df_pax = pd.concat(factor * [inData.passengers])
+        df_pt = pd.concat(factor * [inData.pt_itinerary])
+        df_add_req = inData.requests.sample(mod, replace=False)
+        df_add_pax = inData.passengers[inData.passengers.index.isin(df_add_req.index)]
+        df_add_pt = inData.pt_itinerary[inData.pt_itinerary.index.isin(df_add_req.index)]
+        inData.requests = df_req.append(df_add_req)
+        inData.passengers = df_pax.append(df_add_pax)
+        inData.pt_itinerary = df_pt.append(df_add_pt)
+    else:
+        inData.requests = inData.requests.sample(params.nP, replace=False)
+        inData.passengers = inData.passengers[inData.passengers.index.isin(inData.requests.index)]
+        inData.pt_itinerary = inData.pt_itinerary[inData.pt_itinerary.index.isin(inData.requests.index)]
+    inData.requests = inData.requests.sort_index()
+    inData.passengers = inData.passengers.sort_index()
+    inData.pt_itinerary = inData.pt_itinerary.sort_index()
+    inData.requests.reset_index(inplace=True, drop=True)
+    inData.requests.pax_id = inData.requests.index
+    inData.requests.schedule_id = inData.requests.index
+    inData.passengers.reset_index(inplace=True, drop=True)
+    inData.pt_itinerary.reset_index(inplace=True, drop=True)
+    inData.pt_itinerary.pax_id = inData.pt_itinerary.index
+
+    return inData
