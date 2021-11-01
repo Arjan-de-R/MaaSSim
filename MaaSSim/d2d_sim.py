@@ -1,75 +1,66 @@
 import pandas as pd
 from dotmap import DotMap
+import numpy as np
 
-def D2D_summary(**kwargs):
-    "create day-to-day stats"
-    d2d = kwargs.get('d2d', None)
-    evol_micro = DotMap()
-    evol_agg = DotMap()
+
+def d2d_summary_day(evol_micro, drivers_summary, travs_summary, day):
+    "add stats of last day to d2d dataframe"
+    # d2d = kwargs.get('d2d', None)
 
     # Supply
-    drivers = d2d.drivers
-    inform = pd.concat([drivers[i].informed for i in range(len(drivers))], axis=1)
-    inform.columns = list(range(len(drivers)))
-    regist = pd.concat([drivers[i].registered for i in range(len(drivers))], axis=1)
-    regist.columns = list(range(len(drivers)))
-    ptcp = pd.concat([~drivers[i].out for i in range(0, len(drivers))], axis=1)
-    ptcp.columns = list(range(len(drivers)))
-    init_perc_inc = pd.concat([drivers[i].init_perc_inc for i in range(len(drivers))], axis=1)
-    init_perc_inc.columns = list(range(len(drivers)))
-    exp_inc = pd.concat([drivers[i].exp_inc for i in range(len(drivers))], axis=1)
-    exp_inc.columns = list(range(len(drivers)))
-    evol_micro.supply = DotMap()
-    evol_micro.supply.inform = inform
-    evol_micro.supply.regist = regist
-    evol_micro.supply.ptcp = ptcp
-    evol_micro.supply.perc_inc = init_perc_inc
-    evol_micro.supply.exp_inc = exp_inc
+    evol_micro.supply.inform.append(drivers_summary.informed.to_list())
+    evol_micro.supply.regist.append(drivers_summary.registered.to_list())
+    evol_micro.supply.ptcp.append((~drivers_summary.out).to_list())
+    evol_micro.supply.perc_inc.append(drivers_summary.init_perc_inc.to_list())
+    evol_micro.supply.exp_inc.append(drivers_summary.exp_inc.to_list())
+    ptcp = (~drivers_summary.out).replace(False, np.nan)
+    evol_micro.supply.perc_inc_ptcp.append((ptcp * drivers_summary.init_perc_inc).to_list())
+
+    # Demand
+    evol_micro.demand.inform.append(travs_summary.informed.to_list())
+    evol_micro.demand.requests.append(travs_summary.requests.to_list())
+    evol_micro.demand.gets_offer.append(travs_summary.gets_offer.to_list())
+    evol_micro.demand.accepts_offer.append(travs_summary.accepts_offer.to_list())
+    evol_micro.demand.wait_time.append(travs_summary.xp_wait.to_list())
+    evol_micro.demand.corr_wait_time.append(travs_summary.corr_xp_wait.to_list())
+    evol_micro.demand.perc_wait.append(travs_summary.init_perc_wait.to_list())
+    evol_micro.demand.chosen_mode.append(travs_summary.chosen_mode.to_list())
+    perc_wait_req = travs_summary.requests.replace(False, np.nan)
+    evol_micro.demand.perc_wait_req.append((perc_wait_req * travs_summary.init_perc_wait).to_list())
+    evol_micro.demand.bike.append((travs_summary.chosen_mode == 'bike').to_list())
+    evol_micro.demand.car.append((travs_summary.chosen_mode == 'car').to_list())
+    evol_micro.demand.pt.append((travs_summary.chosen_mode == 'pt').to_list())
+
+    return evol_micro
+
+
+def d2d_agg_statistics(evol_micro):
+    # create aggregated d2d statistics based on day-to-day statistics of individual agents
+
+    # d2d lists to dataframes
+    for key in evol_micro.supply:
+        evol_micro.supply[key] = pd.DataFrame(evol_micro.supply[key]).T
+    for key in evol_micro.demand:
+        evol_micro.demand[key] = pd.DataFrame(evol_micro.demand[key]).T
+
+    # Create df with aggregated statistics (not on agent-level)
+    evol_agg = DotMap()
     evol_agg.supply = pd.DataFrame({'inform': evol_micro.supply.inform.sum(), 'regist': evol_micro.supply.regist.sum(),
                                     'particip': evol_micro.supply.ptcp.sum(),
                                     'mean_perc_inc': evol_micro.supply.perc_inc.mean(),
+                                    'mean_perc_inc_ptcp': evol_micro.supply.perc_inc_ptcp.mean(),
                                     'mean_exp_inc': evol_micro.supply.exp_inc.mean()})
     evol_agg.supply.index.name = 'day'
-
-    # Demand
-    travs = d2d.travs
-    inform = pd.concat([travs[i].informed for i in range(len(travs))], axis=1)
-    inform.columns = list(range(len(travs)))
-    requests = pd.concat([travs[i].requests for i in range(len(travs))], axis=1)
-    requests.columns = list(range(len(travs)))
-    gets_offer = pd.concat([travs[i].gets_offer for i in range(len(travs))], axis=1)
-    gets_offer.columns = list(range(len(travs)))
-    accepts_offer = pd.concat([travs[i].accepts_offer for i in range(len(travs))], axis=1)
-    accepts_offer.columns = list(range(len(travs)))
-    wait_time = pd.concat([travs[i].xp_wait for i in range(len(travs))], axis=1)
-    wait_time.columns = list(range(len(travs)))
-    corr_wait_time = pd.concat([travs[i].corr_xp_wait for i in range(len(travs))], axis=1)
-    corr_wait_time.columns = list(range(len(travs)))
-    perc_wait = pd.concat([travs[i].init_perc_wait for i in range(len(travs))], axis=1)
-    perc_wait.columns = list(range(len(travs)))
-    mode = pd.concat([travs[i]['mode'] for i in range(len(travs))], axis=1)
-    mode.columns = list(range(len(travs)))
-    evol_micro.demand = DotMap()
-    evol_micro.demand.inform = inform
-    evol_micro.demand.requests = requests
-    evol_micro.demand.gets_offer = gets_offer
-    evol_micro.demand.accepts_offer = accepts_offer
-#     evol_micro.demand.mode_day = mode_day
-    evol_micro.demand.wait_time = wait_time
-    evol_micro.demand.corr_wait_time = corr_wait_time
-    evol_micro.demand.perc_wait = perc_wait
-    evol_micro.demand.bike = (mode == 'bike')
-    evol_micro.demand.car = (mode == 'car')
-    evol_micro.demand.pt = (mode == 'pt')
     evol_agg.demand = pd.DataFrame(
         {'inform': evol_micro.demand.inform.sum(), 'requests': evol_micro.demand.requests.sum(),
          'gets_offer': evol_micro.demand.gets_offer.sum(), 'accepts_offer': evol_micro.demand.accepts_offer.sum(),
          'mean_wait': evol_micro.demand.wait_time.mean(), 'corr_mean_wait': evol_micro.demand.corr_wait_time.mean(),
-         'perc_wait': evol_micro.demand.perc_wait.mean(), 'bike': evol_micro.demand.bike.sum(),
-         'car': evol_micro.demand.car.sum(), 'pt': evol_micro.demand.pt.sum()})
+         'perc_wait': evol_micro.demand.perc_wait.mean(), 'perc_wait_req': evol_micro.demand.perc_wait_req.mean(),
+         'bike': evol_micro.demand.bike.sum(), 'car': evol_micro.demand.car.sum(), 'pt': evol_micro.demand.pt.sum()})
     evol_agg.demand.index.name = 'day'
 
     return evol_micro, evol_agg
+
 
 def D2D_stop_crit(*args, **kwargs):
     "returns True if simulation will be stopped, False otherwise"
@@ -80,3 +71,30 @@ def D2D_stop_crit(*args, **kwargs):
         return False
     ret = (res[len(res)-1].new_perc_inc - res[len(res)-1].init_perc_inc) / res[len(res)-1].init_perc_inc
     return bool(ret.abs().max() <= params.evol.conv)
+
+
+def init_d2d_dotmap():
+    # create empty dotmap for adding daily statistics
+    evol_micro = DotMap()
+    evol_micro.supply = DotMap()
+    evol_micro.supply.inform = []
+    evol_micro.supply.regist = []
+    evol_micro.supply.ptcp = []
+    evol_micro.supply.perc_inc = []
+    evol_micro.supply.perc_inc_ptcp = []
+    evol_micro.supply.exp_inc = []
+    evol_micro.demand = DotMap()
+    evol_micro.demand.inform = []
+    evol_micro.demand.requests = []
+    evol_micro.demand.gets_offer = []
+    evol_micro.demand.accepts_offer = []
+    evol_micro.demand.wait_time = []
+    evol_micro.demand.corr_wait_time = []
+    evol_micro.demand.perc_wait = []
+    evol_micro.demand.perc_wait_req = []
+    evol_micro.demand.chosen_mode = []
+    evol_micro.demand.bike = []
+    evol_micro.demand.car = []
+    evol_micro.demand.pt = []
+
+    return evol_micro

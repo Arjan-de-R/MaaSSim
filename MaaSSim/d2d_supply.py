@@ -16,6 +16,7 @@ def generate_vehicles_d2d(_inData, _params=None):
     event is set to STARTS_DAY
     """
 
+    # np.random.seed(_params.repl_id)
     vehs = generate_vehicles(_inData, _params.nV)
 
     vehs.expected_income = np.nan
@@ -85,16 +86,16 @@ def update_d2d_drivers(*args, **kwargs):
     "updating drivers' day experience and determination of new perceived income"
     sim = kwargs.get('sim',None)
     params = kwargs.get('params',None)
-    run_id = len(sim.res)-1
+    # run_id = len(sim.res)-1
 
     ret = pd.DataFrame()
     ret['veh'] = np.arange(1,params.nV+1)
     ret['pos'] = sim.vehicles.pos.to_numpy()
     ret['informed'] = sim.vehicles.informed.to_numpy()
     ret['registered'] = sim.vehicles.registered.to_numpy()
-    ret['out'] = sim.res[run_id].veh_exp.OUT.to_numpy()
+    ret['out'] = sim.last_res.veh_exp.OUT.to_numpy()
     ret['init_perc_inc'] = sim.vehicles.expected_income.to_numpy()
-    ret['exp_inc'] = sim.res[run_id].veh_exp.NET_INCOME.to_numpy()
+    ret['exp_inc'] = sim.last_res.veh_exp.NET_INCOME.to_numpy()
     ret.loc[ret.out, 'exp_inc'] = np.nan
     new_perc_inc = learning_drivers(params = params, prev_perc = ret.init_perc_inc, exp = ret.exp_inc.fillna(0), out = ret.out)
     

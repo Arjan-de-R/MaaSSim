@@ -123,9 +123,6 @@ def update_d2d_travellers(*args, **kwargs):
     "updating travellers' experience and updating new expected waiting time"
     sim = kwargs.get('sim', None)
     params = kwargs.get('params', None)
-    run_id = len(sim.res) - 1
-    hist = pd.concat([~sim.res[_]['pax_exp'].NO_REQUEST for _ in range(0, run_id + 1)], axis=1, ignore_index=True)
-    days_with_exp = hist.sum(axis=1)
 
     ret = pd.DataFrame()
     ret['pax'] = np.arange(0, len(sim.passengers))
@@ -135,31 +132,26 @@ def update_d2d_travellers(*args, **kwargs):
     ret['tt_min'] = sim.inData.requests.ttrav.to_numpy()
     ret['dist'] = sim.inData.requests.dist.to_numpy()
     ret['informed'] = sim.passengers.informed.to_numpy()
-    ret['requests'] = ~sim.res[run_id].pax_exp['NO_REQUEST']
-    ret['gets_offer'] = (sim.res[run_id].pax_exp['LOSES_PATIENCE'].apply(lambda x: True if x == 0 else False)
+    ret['requests'] = ~sim.last_res.pax_exp['NO_REQUEST']
+    ret['gets_offer'] = (sim.last_res.pax_exp['LOSES_PATIENCE'].apply(lambda x: True if x == 0 else False)
                          & ret['requests']).to_numpy()
-    ret['accepts_offer'] = ~sim.res[run_id].pax_exp['OTHER_MODE'] & ret['gets_offer']
-    ret['xp_wait'] = sim.res[run_id].pax_exp.WAIT.to_numpy()
-    ret['xp_ivt'] = sim.res[run_id].pax_exp.TRAVEL.to_numpy()
-    ret['xp_ops'] = sim.res[run_id].pax_exp.OPERATIONS.to_numpy()
+    ret['accepts_offer'] = ~sim.last_res.pax_exp['OTHER_MODE'] & ret['gets_offer']
+    ret['xp_wait'] = sim.last_res.pax_exp.WAIT.to_numpy()
+    ret['xp_ivt'] = sim.last_res.pax_exp.TRAVEL.to_numpy()
+    ret['xp_ops'] = sim.last_res.pax_exp.OPERATIONS.to_numpy()
     ret.loc[(ret.requests == False) | (ret.gets_offer == False) | (ret.accepts_offer == False), ['xp_wait', 'xp_ivt',
                                                                                                  'xp_ops']] = np.nan
     ret['xp_tt_total'] = ret.xp_wait + ret.xp_ivt + ret.xp_ops
 
     ret['init_perc_wait'] = sim.passengers.expected_wait.to_numpy()
-    ret['experience'] = days_with_exp.to_numpy()
     ret['corr_xp_wait'] = ret.xp_wait.copy()
     ret.loc[(ret.requests & (~ret.gets_offer)),['corr_xp_wait']] = params.evol.travellers.reject_penalty
     new_perc_wait = learning_travs(params = params, prev_perc = ret.init_perc_wait, exp = ret.corr_xp_wait)
 
     ret['new_perc_wait'] = new_perc_wait.to_numpy()
     ret.loc[ret.informed & (~ret.requests), 'new_perc_wait'] = ret.loc[ret.informed & (~ret.requests), 'init_perc_wait']
-    ret['mode'] = sim.passengers.mode_day.to_numpy()
+    ret['chosen_mode'] = sim.passengers.mode_day.to_numpy()
 
-    cols = list(ret.columns)
-    a, b = cols.index('new_perc_wait'), cols.index('experience')
-    cols[b], cols[a] = cols[a], cols[b]
-    ret = ret[cols]
     ret = ret.set_index('pax')
 
     return ret
@@ -259,7 +251,6 @@ def mode_preday(inData, params):
 
 def util_alt_modes(inData, params):
     "determine utility of alternative modes for group of travellers"
-    passengers = inData.passengers
     requests = inData.requests
     pt_itins = inData.pt_itinerary
     prefs = params.evol.travellers.mode_pref
@@ -360,14 +351,14 @@ def consist_OTP_alba(inData, params):
         df_req = pd.concat(factor * [inData.requests])
         df_pax = pd.concat(factor * [inData.passengers])
         df_pt = pd.concat(factor * [inData.pt_itinerary])
-        df_add_req = inData.requests.sample(mod, replace=False)
+        df_add_req = inData.requests.sample(mod, replace=False, random_state=1)
         df_add_pax = inData.passengers[inData.passengers.index.isin(df_add_req.index)]
         df_add_pt = inData.pt_itinerary[inData.pt_itinerary.index.isin(df_add_req.index)]
         inData.requests = df_req.append(df_add_req)
         inData.passengers = df_pax.append(df_add_pax)
         inData.pt_itinerary = df_pt.append(df_add_pt)
     else:
-        inData.requests = inData.requests.sample(params.nP, replace=False)
+        inData.requests = inData.requests.sample(params.nP, replace=False, random_state=1)
         inData.passengers = inData.passengers[inData.passengers.index.isin(inData.requests.index)]
         inData.pt_itinerary = inData.pt_itinerary[inData.pt_itinerary.index.isin(inData.requests.index)]
     inData.requests = inData.requests.sort_index()
