@@ -35,16 +35,10 @@ def single_pararun(one_slice, *args):
         if key in ['comm_rate', 'fare', 'base_fare']:
             _params.platforms[key] = val
         if key == 'gini':
-            _params.evol.travellers.drivers[key] = val
+            _params.evol.drivers[key] = val
+            _params.evol.travellers.mode_pref[key] = val
         else:
             _params[key] = val
-
-        # if _params.get("decis_type",False) == "platforms":
-        #     _params.platforms[key] = val
-        # if _params.get("decis_type",False) == "drivers":
-        #     _params.evol.travellers.drivers[key] = val
-        # else:
-        #     _params[key] = val
 
     stamp['dt'] = str(pd.Timestamp.now()).replace('-','').replace('.','').replace(' ','')
 
@@ -73,7 +67,7 @@ def simulate_parallel(config="../data/config/parallel.json", inData=None, params
     # inData.vehicles = pd.read_csv(os.getcwd() + '//scenarios//inData//vehicles.csv', index_col=0)
     # inData.platforms = pd.read_csv(os.getcwd() + '//scenarios//inData//platforms.csv', index_col=0)
 
-    if inData is None:  # othwerwise we use what is passed
+    if inData is None:  # otherwise we use what is passed
         from MaaSSim.data_structures import structures
         inData = structures.copy()  # fresh data
     if params is None:
@@ -82,7 +76,7 @@ def simulate_parallel(config="../data/config/parallel.json", inData=None, params
     if len(inData.G) == 0:  # only if no graph in input
         inData = load_G(inData, params, stats=True)  # download graph for the 'params.city' and calc the skim matrices
         if params.alt_modes.car.diff_parking:
-            inData = diff_parking(inData) # determine which nodes are in center
+            inData = diff_parking(inData)  # determine which nodes are in center
     # if len(inData.passengers) == 0:  # only if no passengers in input
     #     inData = generate_demand(inData, params, avg_speed=True)
     # if len(inData.vehicles) == 0:  # only if no vehicles in input
@@ -169,6 +163,7 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
     inData.vehicles = fixed_supply.copy()
     inData.vehicles.platform = inData.vehicles.apply(lambda x: 0, axis = 1)
     inData.passengers.platforms = inData.passengers.apply(lambda x: [0], axis = 1)
+
     inData.requests['platform'] = inData.requests.apply(lambda row: inData.passengers.loc[row.name].platforms[0], axis = 1)
     inData.platforms = pd.concat([inData.platforms,pd.DataFrame(columns=['base_fare','comm_rate','min_fare'])])
     inData.platforms = initialize_df(inData.platforms)
@@ -233,6 +228,7 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
     sim_zip.writestr("PT_itineraries.csv", inData.pt_itinerary.to_csv())
     sim_zip.writestr("vehicles.csv", inData.vehicles[['pos','res_wage']].to_csv())
     sim_zip.writestr("platforms.csv", inData.platforms.to_csv())
+    sim_zip.writestr("all_pax.csv", all_pax.to_csv())
     evol_micro = init_d2d_dotmap()
 
     for day in range(params.get('nD', 1)):  # run iterations
@@ -251,11 +247,11 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
         inData.vehicles.work_exp = exp_df.work_exp
         res_inf_driver = wom_driver(inData, params=params)
         inData.vehicles.informed = res_inf_driver
-        signal_df = learning_unregist(inData, drivers_summary, params = params)
-        inData.vehicles.expected_income = signal_df.expected_income
+        inData.vehicles.expected_income = learning_unregist(inData, drivers_summary, params = params)
         res_regist = platform_regist(inData, drivers_summary, params=params)
         inData.vehicles.registered = res_regist.registered
         inData.vehicles.work_exp = res_regist.work_exp
+        inData.vehicles.days_since_reg = res_regist.days_since_reg
         # inData.vehicles.expected_income = res_regist.expected_income
         inData.vehicles.pos = fixed_supply.pos
         res_inf_trav = wom_trav(inData, travs_summary, params=params)
@@ -269,9 +265,9 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
     evol_micro, evol_agg = d2d_agg_statistics(evol_micro)
     # evol_micro, evol_agg = D2D_summary(d2d=d2d)
     for data_sup in ['inform', 'regist', 'ptcp', 'perc_inc', 'exp_inc']:
-        sim_zip.writestr("d2d_{}.csv".format(data_sup), evol_micro.supply.toDict()[data_sup].to_csv())
+        sim_zip.writestr("d2d_driver_{}.csv".format(data_sup), evol_micro.supply.toDict()[data_sup].to_csv())
     for data_dem in ['inform', 'requests', 'wait_time', 'corr_wait_time', 'perc_wait', 'bike', 'car', 'pt']:
-        sim_zip.writestr("d2d_{}.csv".format(data_dem), evol_micro.demand.toDict()[data_dem].to_csv())
+        sim_zip.writestr("d2d_traveller_{}.csv".format(data_dem), evol_micro.demand.toDict()[data_dem].to_csv())
     sim_zip.writestr("d2d_agg_supply.csv", evol_agg.supply.to_csv())
     sim_zip.writestr("d2d_agg_demand.csv", evol_agg.demand.to_csv())
 
