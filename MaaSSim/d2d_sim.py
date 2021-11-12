@@ -15,6 +15,8 @@ def d2d_summary_day(evol_micro, drivers_summary, travs_summary, day):
     evol_micro.supply.exp_inc.append(drivers_summary.exp_inc.to_list())
     ptcp = (~drivers_summary.out).replace(False, np.nan)
     evol_micro.supply.perc_inc_ptcp.append((ptcp * drivers_summary.init_perc_inc).to_list())
+    reg = drivers_summary.registered.replace(False, np.nan)
+    evol_micro.supply.perc_inc_reg.append((reg * drivers_summary.init_perc_inc).to_list())
 
     # Demand
     evol_micro.demand.inform.append(travs_summary.informed.to_list())
@@ -49,6 +51,7 @@ def d2d_agg_statistics(evol_micro):
                                     'particip': evol_micro.supply.ptcp.sum(),
                                     'mean_perc_inc': evol_micro.supply.perc_inc.mean(),
                                     'mean_perc_inc_ptcp': evol_micro.supply.perc_inc_ptcp.mean(),
+                                    'mean_perc_inc_reg': evol_micro.supply.perc_inc_reg.mean(),
                                     'mean_exp_inc': evol_micro.supply.exp_inc.mean()})
     evol_agg.supply.index.name = 'day'
     evol_agg.demand = pd.DataFrame(
@@ -82,6 +85,7 @@ def init_d2d_dotmap():
     evol_micro.supply.ptcp = []
     evol_micro.supply.perc_inc = []
     evol_micro.supply.perc_inc_ptcp = []
+    evol_micro.supply.perc_inc_reg = []
     evol_micro.supply.exp_inc = []
     evol_micro.demand = DotMap()
     evol_micro.demand.inform = []
