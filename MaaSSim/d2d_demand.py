@@ -171,8 +171,11 @@ def wom_trav(inData, end_day, **kwargs):
     params = kwargs.get('params', None)
     exp_inf_trav = end_day.loc[end_day.informed]
     average_xp_wait = exp_inf_trav.corr_xp_wait.mean() / 60
-    signal = (np.random.lognormal(params.evol.travellers.inform.mu_log, np.sqrt(2 * (np.log(average_xp_wait) - params.evol.travellers.inform.mu_log)), len(inData.passengers))) * 60
-    signal = np.where(signal <= 7200, signal, 7200)
+    std_xp_wait = exp_inf_trav.corr_xp_wait.std() / 60
+    log_mu = np.log(average_xp_wait ** 2 / math.sqrt(std_xp_wait ** 2 + average_xp_wait ** 2))
+    log_std = math.sqrt(np.log(std_xp_wait ** 2 / average_xp_wait ** 2 + 1))
+    signal = (np.random.lognormal(log_mu, log_std, len(inData.passengers))) * 60
+    signal = np.where(signal <= 3600, signal, 3600)
     nP_inf = inData.passengers.informed.sum()
     nP_uninf = len(inData.passengers) - nP_inf
 

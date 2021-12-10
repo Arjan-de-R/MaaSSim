@@ -141,6 +141,7 @@ def learning_unregist(inData, end_day, **kwargs):
     params = kwargs.get('params', None)
     exp_reg_drivers = end_day[end_day.registered]
     average_xp_income = exp_reg_drivers.exp_inc.mean()
+    std_xp_income = exp_reg_drivers.exp_inc.std()
 
     cond_new_inf = inData.vehicles.informed & ~inData.vehicles.registered & end_day.new_perc_inc.isna()
     cond_prev_inf = inData.vehicles.informed & ~inData.vehicles.registered & ~end_day.new_perc_inc.isna()
@@ -148,8 +149,7 @@ def learning_unregist(inData, end_day, **kwargs):
                             'cond_prev_inf': cond_prev_inf}, index=np.arange(1, params.nV + 1))
 
     if (~end_day.out).any(axis=0):  # at least a single participating driver
-        df['signal'] = np.random.normal(average_xp_income, params.evol.drivers.inform.signal_rel_std * average_xp_income,
-                              len(inData.vehicles))
+        df['signal'] = np.random.normal(average_xp_income, std_xp_income, len(inData.vehicles))
         df['perc_inc'] = end_day.new_perc_inc * (1 - params.evol.drivers.kappa) + df.signal * params.evol.drivers.kappa
     else:
         df['signal'] = np.ones(len(inData.vehicles)) * end_day.new_perc_inc.mean()
