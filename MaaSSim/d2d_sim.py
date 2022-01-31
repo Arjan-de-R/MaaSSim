@@ -10,7 +10,9 @@ def d2d_summary_day(evol_micro, drivers_summary, travs_summary, day):
     # Supply
     evol_micro.supply.inform.append(drivers_summary.informed.to_list())
     evol_micro.supply.regist.append(drivers_summary.registered.to_list())
+    evol_micro.supply.rejected_reg.append(drivers_summary.rejected_reg.to_list())
     evol_micro.supply.ptcp.append((~drivers_summary.out).to_list())
+    evol_micro.supply.rejected_ptcp.append(drivers_summary.forced_out.to_list())
     evol_micro.supply.perc_inc.append(drivers_summary.init_perc_inc.to_list())
     evol_micro.supply.exp_inc.append(drivers_summary.exp_inc.to_list())
     ptcp = (~drivers_summary.out).replace(False, np.nan)
@@ -48,7 +50,9 @@ def d2d_agg_statistics(evol_micro):
     # Create df with aggregated statistics (not on agent-level)
     evol_agg = DotMap()
     evol_agg.supply = pd.DataFrame({'inform': evol_micro.supply.inform.sum(), 'regist': evol_micro.supply.regist.sum(),
+                                    'rejected_reg': evol_micro.supply.rejected_reg.sum(),
                                     'particip': evol_micro.supply.ptcp.sum(),
+                                    'reject_particip': evol_micro.supply.rejected_ptcp.sum(),
                                     'mean_perc_inc': evol_micro.supply.perc_inc.mean(),
                                     'mean_perc_inc_ptcp': evol_micro.supply.perc_inc_ptcp.mean(),
                                     'mean_perc_inc_reg': evol_micro.supply.perc_inc_reg.mean(),
@@ -82,7 +86,9 @@ def init_d2d_dotmap():
     evol_micro.supply = DotMap()
     evol_micro.supply.inform = []
     evol_micro.supply.regist = []
+    evol_micro.supply.rejected_reg = []
     evol_micro.supply.ptcp = []
+    evol_micro.supply.rejected_ptcp = []
     evol_micro.supply.perc_inc = []
     evol_micro.supply.perc_inc_ptcp = []
     evol_micro.supply.perc_inc_reg = []

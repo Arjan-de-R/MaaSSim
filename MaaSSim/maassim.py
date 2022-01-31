@@ -12,6 +12,7 @@ import networkx as nx
 import simpy
 import time
 import numpy as np
+import random
 import os.path
 import zipfile
 from pathlib import Path
@@ -110,13 +111,14 @@ class Simulator:
         self.pax = dict()  # list of passengers
         self.vehs = dict()  # list of vehicles
         self.plats = dict()  # list of platforms
+        self.ptcp = list() # list of participating drivers
         self.sim_start = None
 
     def generate(self):
         # generate passengers and vehicles as agents in the simulation (inData stays intact)
         for platform_id in self.platforms.index:
             self.plats[platform_id] = PlatformAgent(self, platform_id)
-        for veh_id in self.vehicles.index:
+        for veh_id in random.sample(self.vehicles.index.tolist(), len(self.vehicles.index.tolist())):
             self.vehs[veh_id] = VehicleAgent(self, veh_id)
         for pax_id in self.inData.passengers.index:
             self.pax[pax_id] = PassengerAgent(self, pax_id)
@@ -138,7 +140,7 @@ class Simulator:
         if run_id is None:
             self.logger.warning(f"simulation time {round(self.sim_end - self.sim_start, 1)} s")
         else:
-            self.logger.warning(f"day {run_id}: simulation time {round(self.sim_end - self.sim_start, 1)} s") 
+            self.logger.warning(f"day {run_id}: simulation time {round(self.sim_end - self.sim_start, 1)} s")
         self.make_res(run_id)
         if self.params.get('assert_me', True):
             self.assert_me()  # test consistency of results
@@ -191,7 +193,7 @@ class Simulator:
             logger = logging.getLogger()
             logger.setLevel(level)
             return logging.getLogger(__name__)
-        
+
         logger.setLevel(level)
         return logger
 
