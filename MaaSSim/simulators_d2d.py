@@ -32,7 +32,7 @@ def single_pararun(one_slice, *args):
         val = search_space[key][int(one_slice[int(i)])]
         stamp[key] = val
 
-        if key in ['comm_rate', 'fare', 'base_fare']:
+        if key in ['comm_rate', 'fare', 'base_fare', 'reg_cap', 'ptcp_cap']:
             _params.platforms[key] = val
         if key == 'gini':
             _params.evol.drivers[key] = val
@@ -254,6 +254,7 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
         inData.vehicles.days_since_reg = res_regist.days_since_reg
         # inData.vehicles.expected_income = res_regist.expected_income
         inData.vehicles.pos = fixed_supply.pos
+        inData.vehicles.rejected_reg = res_regist.rejected_reg
         res_inf_trav = wom_trav(inData, travs_summary, params=params)
         inData.passengers.informed = res_inf_trav.informed
         inData.passengers.expected_wait = res_inf_trav.perc_wait
