@@ -157,6 +157,8 @@ def learning_unregist(inData, end_day, **kwargs):
                             'cond_prev_inf': cond_prev_inf}, index=np.arange(1, params.nV + 1))
 
     if (~end_day.out).any(axis=0):  # at least a single participating driver
+        if (~end_day.out).sum() == 1:
+            std_xp_income = exp_reg_drivers.exp_inc.std(ddof=0)
         df['signal'] = np.random.normal(average_xp_income, params.evol.drivers.inform.std_fact * std_xp_income, len(inData.vehicles))
         df['perc_inc'] = end_day.new_perc_inc * (1 - params.evol.drivers.kappa) + df.signal * params.evol.drivers.kappa
     else:
@@ -171,12 +173,16 @@ def learning_unregist(inData, end_day, **kwargs):
 def platform_regist(inData, end_day, **kwargs):
     "determine probability of registering at platform overnight for all unregistered drivers"
     params = kwargs.get('params', None)
+    if end_day.forced_out.sum() == 0:   # all willing drivers were allowed to participate on previous day
+        prob_ptcp_rejected = 0
+    else:
+        prob_ptcp_rejected = end_day.forced_out.sum() / (end_day.forced_out.sum() + (~end_day.out).sum())
 
     regist_df = pd.DataFrame(data={'inform': inData.vehicles.informed, 'prev_regist': end_day.registered,
                                    'work_exp': inData.vehicles.work_exp,
                                    'days_since_reg': inData.vehicles.days_since_reg,
                                    'expected_income': end_day.new_perc_inc,
-                                   'prob_ptcp_rejected': end_day.forced_out.sum() / (end_day.forced_out.sum() + (~end_day.out).sum())},
+                                   'prob_ptcp_rejected': prob_ptcp_rejected},
                              index=np.arange(1, len(inData.vehicles) + 1))
     regist_df['days_since_reg'] = regist_df['days_since_reg'] + 1
     regist_df['decis'] = pd.Series(np.random.rand(
