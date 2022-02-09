@@ -200,10 +200,10 @@ def platform_regist(inData, end_day, **kwargs):
     prob_regist_util = np.exp(util_reg) / (np.exp(util_reg) + np.exp(util_not_reg))
     satisfied = np.random.rand(params.nV) < prob_regist_util
 
-    regist_df['regist_decision'] = satisfied & regist_df.decis
     regist_df['deregist_decision'] = ~satisfied & regist_df.decis & (regist_df.work_exp >= params.evol.drivers.regist.min_work_exp) & (regist_df.days_since_reg >= params.evol.drivers.regist.min_days)
     prev_regist = inData.vehicles.registered.to_numpy()
     still_regist = prev_regist * (~regist_df.deregist_decision)
+    regist_df['regist_decision'] = satisfied & regist_df.decis & (~prev_regist)
 
     max_entrants = params.platforms.reg_cap - still_regist.sum()
     regist_df['lot_ticket'] = np.random.rand(params.nV) * regist_df.regist_decision
