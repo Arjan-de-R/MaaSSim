@@ -98,6 +98,7 @@ def add_indicators(micro, params, drivers, requests, res):
         res.sup[run_id]['new_regist'] = regi.sum(axis=0).values
         res.sup[run_id]['deregist'] = dereg.sum(axis=0).values
 
+        res.dem[run_id]['nP'] = params[run_id]['nP']
         res.dem[run_id].gets_offer = res.dem[run_id].gets_offer / res.dem[run_id].requests
         inform = (micro.dem.inform[run_id]).replace(False, np.nan)
         vot_inf =  inform.mul(requests[run_id].VoT, axis=0)
@@ -117,9 +118,9 @@ def add_indicators(micro, params, drivers, requests, res):
         ptcp_value = micro.sup.exp_inc[run_id].sub(drivers[run_id].res_wage.values, axis='rows').fillna(0)
         regist_costs = micro.sup.regist[run_id] * params[run_id]['evol']['drivers']['regist']['cost_comp']
         driver_surplus = ptcp_value - regist_costs
-        res.sup[run_id]['surplus'] = driver_surplus.sum().values
+        res.sup[run_id]['driver_surplus'] = driver_surplus.sum().values
 
-        # Difference in Generalised Cost
+        # Consumer surplus (welfare gain)
         prefs = params[run_id]['evol']['travellers']['mode_pref']
         rs_ivt = requests[run_id].dist / params[run_id]['speeds']['ride']
         rs_fare = params[run_id]['platforms']['base_fare'] + params[run_id]['platforms']['fare'] * requests[run_id].dist / 1000
@@ -128,15 +129,55 @@ def add_indicators(micro, params, drivers, requests, res):
         beta_wait = beta_ivt * prefs['wait_multip']
         U_rs = beta_ivt * rs_ivt + prefs['beta_cost'] * rs_fare + prefs['ASC_rs']
         U_wait = micro.dem.wait_time[run_id].mul(beta_wait, axis=0)
-        U_rs = U_wait.add(U_rs, axis=0)
-        U_best_alt = requests[run_id][['U_pt','U_car','U_bike']].max(axis=1)
-        U_diff = U_rs.sub(U_best_alt, axis=0)
-        res.dem[run_id]['GC_diff'] = (U_diff / -prefs['beta_cost']).sum().values
+        U_wait_perc  = micro.dem.perc_wait[run_id].mul(beta_wait, axis=0)
+        U_rs = U_wait_perc.add(U_rs,axis=0)
+        exp_U_rs = np.exp(U_rs)
+        exp_df = pd.DataFrame()
+        exp_df['pt'] = np.exp(requests[run_id].U_pt)
+        exp_df['car'] = np.exp(requests[run_id].U_car)
+        exp_df['bike'] = np.exp(requests[run_id].U_bike)
+        exp_sum_alt = exp_df.pt + exp_df.car + exp_df.bike
+        exp_U_tot = exp_U_rs.add(exp_sum_alt, axis=0)
+        exp_U_alts = exp_U_tot - exp_U_rs
+        logsum_tot = np.log(exp_U_tot)
+        logsum_alts = np.log(exp_U_alts)
+        logsum_diff = logsum_tot - logsum_alts
+        U_best_alt = requests[run_id][['U_pt','U_car', 'U_bike']].max(axis=1).to_numpy() # If (negative) utilities are very large, it is very likely that alternative with highest utility is chosen
+        diff_best_alt  = U_rs.subtract(U_best_alt, axis=0)
+        diff_best_alt[diff_best_alt < 0] = 0
+        logsum_inf = (logsum_diff == float("inf"))
+        U_gain = logsum_inf * diff_best_alt + (1-logsum_inf) * logsum_diff
+        U_gain = U_gain * micro.dem.requests[run_id]
+        soc_welfare = (U_gain / -prefs['beta_cost']).sum(axis=0)
+        res.dem[run_id]['cons_surplus'] = soc_welfare.values
 
         # Platform profit
-        rs_fare = requests[run_id].dist / 1000 * params[run_id]['platforms']['fare'] + params[run_id]['platforms']['base_fare']
-        rs_fare = rs_fare.where(rs_fare > (params[run_id]['platforms']['min_fare']), params[run_id]['platforms']['min_fare'])
+#         rs_fare = requests[run_id].dist / 1000 * params[run_id]['platforms']['fare'] + params[run_id]['platforms']['base_fare']
+#         rs_fare = rs_fare.where(rs_fare > (params[run_id]['platforms']['min_fare']), params[run_id]['platforms']['min_fare'])
         res.plf[run_id] = micro.dem.requests[run_id].mul(rs_fare,axis=0).sum(axis=0) * params[run_id]['platforms']['comm_rate']
+        
+        # Avg idle time, match time and pick-up time
+        wait_req = micro.dem.corr_wait_time[run_id].copy()
+        wait_req_corr = wait_req.replace(params[run_id]['evol']['travellers']['reject_penalty'], np.nan)
+        acc_req = ~wait_req_corr.isna()
+        fare_acc_req = acc_req.mul(rs_fare, axis=0)
+        total_fares = fare_acc_req.sum(axis=0) * (1-params[run_id]['platforms']['comm_rate'])
+        res.sup[run_id]['mean_rev'] = (total_fares / res.sup[run_id].particip.to_numpy()).to_numpy()
+        res.sup[run_id]['mean_op_costs'] = res.sup[run_id].mean_rev - res.sup[run_id].mean_exp_inc
+        pax_dist = (acc_req.mul(requests[run_id].dist,axis=0)).sum(axis=0) / 1000
+        pax_dist_cost = pax_dist * params[run_id]['drivers']['fuel_costs']
+        res.sup[run_id]['ivt_costs'] = (pax_dist_cost / res.sup[run_id].particip.to_numpy()).to_numpy()
+        res.sup[run_id]['dh_costs'] = res.sup[run_id].mean_op_costs - res.sup[run_id].ivt_costs
+        res.sup[run_id]['mean_dh_dist'] = res.sup[run_id].dh_costs / params[run_id]['drivers']['fuel_costs']
+        res.sup[run_id]['mean_dh_time'] = res.sup[run_id].mean_dh_dist * 1000 / params[run_id]['speeds']['ride']
+        res.sup[run_id]['drive_time'] = (pax_dist * 1000 / res.sup[run_id].particip.to_numpy() / params[run_id]['speeds']['ride']).to_numpy()
+        res.sup[run_id]['not_idle_time'] = res.sup[run_id]['mean_dh_time'] + res.sup[run_id].drive_time
+        res.sup[run_id]['share_idle_time'] = (res.sup[run_id].not_idle_time * -1 + params[run_id]['simTime'] * 3600) / (params[run_id]['simTime'] * 3600)
+        res.dem[run_id]['pickup_time'] = res.sup[run_id].mean_dh_time * res.sup[run_id].particip / acc_req.sum(axis=0).to_numpy()
+        res.dem[run_id]['match_time'] = res.dem[run_id].mean_wait - res.dem[run_id].pickup_time
+        acc_req_wt = wait_req.replace(params[run_id]['evol']['travellers']['reject_penalty'], params[run_id]['times']['patience'])
+        act_wait = acc_req_wt.sum(axis=0) / res.dem[run_id].requests.to_numpy()
+        res.dem[run_id]['corr_match_time'] = act_wait - res.dem[run_id].pickup_time.to_numpy()
     
     return res
 
@@ -211,15 +252,21 @@ def load_results(dir_name):
 
                 if filename.startswith("d2d_driver"):
                     key = filename.replace("d2d_driver_", "").replace(".csv","")
-                    micro.sup[key][run_id] = pd.read_csv(zip_ref.open(filename),index_col=0)
+                    if key in ["exp_inc", "perc_inc"]:
+                        micro.sup[key][run_id] = pd.read_csv(zip_ref.open(filename),index_col=0,dtype=np.float32)
+                    else:
+                        micro.sup[key][run_id] = pd.read_csv(zip_ref.open(filename),index_col=0)
                     micro.sup[key][run_id]['veh'] = micro.sup[key][run_id].index + 1
                     micro.sup[key][run_id] = micro.sup[key][run_id].set_index('veh')
 
                 if filename.startswith("d2d_traveller"):
                     key = filename.replace("d2d_traveller_", "").replace(".csv","")
-                    micro.dem[key][run_id] = pd.read_csv(zip_ref.open(filename),index_col=0)
+                    if key in ["corr_wait_time", "perc_wait", "wait_time"]:
+                        micro.dem[key][run_id] = pd.read_csv(zip_ref.open(filename),index_col=0,dtype=np.float32)
+                    else:
+                        micro.dem[key][run_id] = pd.read_csv(zip_ref.open(filename),index_col=0)
                     micro.dem[key][run_id].index.names = ['pax_id']
-
+                    
             zip_ref.close() # close file
             run_id += 1
     
@@ -264,6 +311,8 @@ def runs_to_scenarios(res, params, vals, scn):
         repl_req_sup = repl_num(perc = conv_perc_inc, params = params_scn[i])
         repl_req_dem = repl_num(perc = conv_perc_wait, params = params_scn[i])
         repl_req_sys = max(repl_req_sup, repl_req_dem)
+        if math.isnan(repl_req_sys): # applies when there is only single replication
+            repl_req_sys = 9999
 
         if repl_req_sys > params_scn[i]['nReplications']:
             print("WARNING: insufficient number of replications: {}/{} for scenario {}".format(params_scn[i]['nReplications'],math.ceil(repl_req_sys),i))
@@ -304,7 +353,7 @@ def runs_to_scenarios(res, params, vals, scn):
     # Reindex equilibrium database to use scenario values
     eql_scn.sup['scenario'] = vals
     eql_scn.dem['scenario'] = vals
-    eql_scn.plf = pd.DataFrame(eql_scn.plf.values, index = vals, columns = ['profit'])
+    eql_scn.plf = pd.DataFrame(eql_scn.plf.values, index = vals, columns = ['plat_profit'])
     eql_scn.sup = eql_scn.sup.set_index('scenario')
     eql_scn.dem = eql_scn.dem.set_index('scenario')
     
@@ -320,8 +369,8 @@ def d2d_stats(d2d, vals, res):
         res_scn.sup[kpi] = join_scn_df(d2d.sup,vals,kpi)
     for kpi in kpis_dem:
         res_scn.dem[kpi] = join_scn_df(d2d.dem,vals,kpi)
-    res_scn.plf.profit = pd.DataFrame([d2d.plf[i]['mean'] for i in vals]).T
-    res_scn.plf.profit = res_scn.plf.profit.set_axis(vals, axis=1, inplace=False)
+    res_scn.plf.plat_profit = pd.DataFrame([d2d.plf[i]['mean'] for i in vals]).T
+    res_scn.plf.plat_profit = res_scn.plf.plat_profit.set_axis(vals, axis=1, inplace=False)
     
     return res_scn
 
@@ -336,7 +385,7 @@ def find_vals_2d(var_val, variable_1, variable_2):
     return vals, scn
 
 
-def load_results_2d(dir_name):
+def load_results_2d(dir_name, pos):
     extension = ".zip"
     var_val = []
     res = DotMap()
@@ -356,7 +405,7 @@ def load_results_2d(dir_name):
             res.dem[run_id] = pd.read_csv(zip_ref.open('d2d_agg_demand.csv'),index_col=0)
 
 #             var_val.append(float(re.split('_|-', item)[2]))
-            var_val.append((re.split('_|-', item)[2]+ '_' + re.split('_|-', item)[4]))
+            var_val.append((re.split('_|-', item)[pos[0]]+ '_' + re.split('_|-', item)[pos[1]]))
     #         var_val.append(float(re.split('_|-', item)[2]))
 
             for filename in zip_ref.namelist():
@@ -389,10 +438,74 @@ def load_results_2d(dir_name):
     
     return res, micro, params, drivers, requests, var_val
 
+def load_results_2d_edit(dir_name, pos, variables, conds):
+    extension = ".zip"
+    var_val = []
+    res = DotMap()
+    params = DotMap()
+    micro = DotMap()
+    drivers = DotMap()
+    ptcp = DotMap()
+    requests = DotMap()
+    perc_inc = DotMap()
+    rs_choice = DotMap()
+    run_id = 0
+    for item in os.listdir(dir_name): # loop through items in dir
+        if item.endswith(extension): # check for ".zip" extension
+            strval_1 = re.split('_|-', item)[pos[0]]
+            strval_2 = re.split('_|-', item)[pos[1]]
+            val_1 = int(strval_1) if variables[0]["int"] else float(strval_1)
+            val_2 = int(strval_2) if variables[1]["int"] else float(strval_2)
+        
+            if (val_1 / val_2 == conds[0]) and (conds[1][0] <= val_1 <= conds[1][1]) and (conds[2][0] <= val_2 <= conds[2][1]):
+#                 if strval_1 + '_' + strval_2 not in var_val:
+                var_val.append(strval_1+ '_' + strval_2)
+
+                zip_file_name = os.path.join(dir_name,item) # get full path of files
+                zip_ref = zipfile.ZipFile(zip_file_name) # create zipfile object
+                res.sup[run_id] = pd.read_csv(zip_ref.open('d2d_agg_supply.csv'),index_col=0)
+                res.dem[run_id] = pd.read_csv(zip_ref.open('d2d_agg_demand.csv'),index_col=0)
+
+                for filename in zip_ref.namelist():
+                    if filename.startswith("params"):
+                        with zip_ref.open(filename) as f:
+                            data = f.read()
+                            params[run_id] = json.loads(data)
+
+                    if filename == "vehicles.csv":
+                        drivers[run_id] = pd.read_csv(zip_ref.open(filename),index_col=0)
+                        drivers[run_id]['veh'] = drivers[run_id].index
+                        drivers[run_id].reset_index(drop=True)
+
+                    if filename == "requests.csv":
+                        requests[run_id] = pd.read_csv(zip_ref.open(filename),index_col=0).set_index('pax_id')
+
+                    if filename.startswith("d2d_driver"):
+                        key = filename.replace("d2d_driver_", "").replace(".csv","")
+                        micro.sup[key][run_id] = pd.read_csv(zip_ref.open(filename),index_col=0)
+                        micro.sup[key][run_id]['veh'] = micro.sup[key][run_id].index + 1
+                        micro.sup[key][run_id] = micro.sup[key][run_id].set_index('veh')
+
+                    if filename.startswith("d2d_traveller"):
+                        key = filename.replace("d2d_traveller_", "").replace(".csv","")
+                        micro.dem[key][run_id] = pd.read_csv(zip_ref.open(filename),index_col=0)
+                        micro.dem[key][run_id].index.names = ['pax_id']
+
+                zip_ref.close() # close file
+                run_id += 1
+    
+    return res, micro, params, drivers, requests, var_val
+
 
 def add_scn_vals(df, variable_1, variable_2):
-    df[variable_1["name"]] = df.index.str.split('_').str.get(0).astype(int)
-    df[variable_2["name"]] = df.index.str.split('_').str.get(1).astype(int)
+    if variable_1["int"]:
+        df[variable_1["name"]] = df.index.str.split('_').str.get(0).astype(int)
+    else:
+        df[variable_1["name"]] = df.index.str.split('_').str.get(0).astype(float)
+    if variable_2["int"]:
+        df[variable_2["name"]] = df.index.str.split('_').str.get(1).astype(int)
+    else:
+        df[variable_2["name"]] = df.index.str.split('_').str.get(1).astype(float)
     df.index.name = 'scenario'
     
     return df
