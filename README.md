@@ -1,5 +1,5 @@
 # MaaSSim
-### agent-based two-sided mobility platform simulator
+### agent-based two-sided mobility platform simulator, including day-to-day evolution of the market
 
 
 [![CodeFactor](https://www.codefactor.io/repository/github/rafalkucharskipk/maassim/badge)](https://www.codefactor.io/repository/github/rafalkucharskipk/maassim)
@@ -118,3 +118,4 @@ or clone this repository
     
 ----
 Rafał Kucharski, 2020
+Arjan de Ruijter, 2023
