@@ -98,6 +98,7 @@ def add_indicators(micro, params, drivers, requests, res, all_pax):
         res.sup[run_id]['new_regist'] = regi.sum(axis=0).values
         res.sup[run_id]['deregist'] = dereg.sum(axis=0).values
 
+        res.dem[run_id]['nP'] = params[run_id]['nP']
         res.dem[run_id].gets_offer = res.dem[run_id].gets_offer / res.dem[run_id].requests
         inform = (micro.dem.inform[run_id]).replace(False, np.nan)
         vot_inf =  inform.mul(requests[run_id].VoT, axis=0)
@@ -138,8 +139,8 @@ def add_indicators(micro, params, drivers, requests, res, all_pax):
         exp_sum_alt = exp_df.pt + exp_df.car + exp_df.bike
         exp_U_tot = exp_U_rs.add(exp_sum_alt, axis=0)
         exp_U_alts = exp_U_tot - exp_U_rs
-        logsum_tot = np.log(exp_U_tot)
-        logsum_alts = np.log(exp_U_alts)
+        logsum_tot = np.log(exp_U_tot.replace(0, np.nan))
+        logsum_alts = np.log(exp_U_alts.replace(0, np.nan))
         logsum_diff = logsum_tot - logsum_alts
         U_best_alt = requests[run_id][['U_pt','U_car', 'U_bike']].max(axis=1).to_numpy() # If (negative) utilities are very large, it is very likely that alternative with highest utility is chosen
         diff_best_alt  = U_rs.subtract(U_best_alt, axis=0)
@@ -151,8 +152,6 @@ def add_indicators(micro, params, drivers, requests, res, all_pax):
         res.dem[run_id]['cons_surplus'] = soc_welfare.values
 
         # Platform profit
-        rs_fare = requests[run_id].dist / 1000 * params[run_id]['platforms']['fare'] + params[run_id]['platforms']['base_fare']
-        rs_fare = rs_fare.where(rs_fare > (params[run_id]['platforms']['min_fare']), params[run_id]['platforms']['min_fare'])
         res.plf[run_id] = micro.dem.requests[run_id].mul(rs_fare,axis=0).sum(axis=0) * params[run_id]['platforms']['comm_rate']
         
         # Avg idle time, match time and pick-up time
@@ -182,6 +181,9 @@ def add_indicators(micro, params, drivers, requests, res, all_pax):
         res.dem[run_id]['extra_bike'] = all_pax[run_id][all_pax[run_id]['mode_choice'] == 'bike'].shape[0]
         res.dem[run_id]['extra_pt'] = all_pax[run_id][all_pax[run_id]['mode_choice'] == 'pt'].shape[0]
         res.dem[run_id]['extra_car'] = all_pax[run_id][all_pax[run_id]['mode_choice'] == 'car'].shape[0]
+        
+        # Total societal value
+        res.soc[run_id] = res.dem[run_id]['cons_surplus'] + res.sup[run_id]['driver_surplus'] + res.plf[run_id].to_numpy()
     
     return res
 
@@ -208,26 +210,27 @@ def determine_eql(res, params):
     return conv_repl
 
 
-def find_vals(var_val, variable):
+def find_vals(var_val, variables):
     scn = pd.DataFrame(var_val, columns = ['val'])
     vals = scn.val.unique()
-    if variable["int"]:
-        vals = list(map(int, vals))
+    
+    if len(variables) == 1:
+         if variables["variable_1"]["int"]:
+                vals = list(map(int, vals))
+    
     vals = sorted(vals)
     
     return vals, scn
 
-def find_vals_caps(var_val, variable):
+def find_vals_caps(var_val):
     scn = pd.DataFrame(var_val, columns = ['val'])
     vals = scn.val.unique()
-#     if variable["int"]:
-#         vals = list(map(int, vals))
     vals = sorted(vals)
     
     return vals, scn
 
 
-def load_results(dir_name, variable):
+def load_results(dir_name, variables):
     extension = ".zip"
     var_val = []
     res = DotMap()
@@ -247,13 +250,21 @@ def load_results(dir_name, variable):
             res.sup[run_id] = pd.read_csv(zip_ref.open('d2d_agg_supply.csv'),index_col=0)
             res.dem[run_id] = pd.read_csv(zip_ref.open('d2d_agg_demand.csv'),index_col=0)
 
-            if variable['name'] == "reg_cap":
-                var_val.append(re.split('_|-', item)[3] + '_' + re.split('_|-', item)[1])
-#             elif variable['name'] == "ptcp_cap":
-#                 var_val.append(re.split('_|-', item)[3] + '_ptcp_cap')
-            else:
-                var_val.append(float(re.split('_|-', item)[2]))
-    #         var_val.append(float(re.split('_|-', item)[2]))
+            # For if there was no supply cap implemented yet when replication was simulated
+            if 'rejected_reg' not in res.sup[run_id].columns:
+                res.sup[run_id]['rejected_reg'] = np.zeros(res.sup[run_id].shape[0])
+                res.sup[run_id]['reject_particip'] = np.zeros(res.sup[run_id].shape[0])
+            
+            if len(variables) == 1:
+                if variables["variable_1"]['name'] == "reg_cap":
+                    var_val.append(re.split('_|-', item)[3] + '_' + re.split('_|-', item)[1])
+                else:
+                    var_val.append(float(re.split('_|-', item)[variables["variable_1"]['pos']]))
+            if len(variables) == 2:
+                var_val.append((re.split('_|-', item)[variables["variable_1"]['pos']]+ '_' + re.split('_|-', item)[variables["variable_2"]['pos']]))
+            if len(variables) == 3:
+                var_val.append((re.split('_|-', item)[variables["variable_1"]['pos']]+ '_' + re.split('_|-', item)[variables["variable_2"]['pos']] + '_' + re.split('_|-', item)[variables["variable_3"]['pos']]))
+                    
 
             for filename in zip_ref.namelist():
                 if filename.startswith("params"):
@@ -305,6 +316,7 @@ def runs_to_scenarios(res, params, vals, scn):
     eql_scn.sup = pd.DataFrame(columns = kpis_sup)
     eql_scn.dem = pd.DataFrame(columns = kpis_dem)
     eql_scn.plf = pd.Series(dtype=int)
+    eql_scn.soc = pd.Series(dtype=int)
 
     for i in vals:
         # Determine which replications are part of the scenario and save params
@@ -313,31 +325,31 @@ def runs_to_scenarios(res, params, vals, scn):
         eql_runs.sup[i] = pd.DataFrame(columns = kpis_sup)
         eql_runs.dem[i] = pd.DataFrame(columns = kpis_dem)
         eql_runs.plf[i] = pd.Series(dtype=int)
+        eql_runs.soc[i] = pd.Series(dtype=int)
 
         # For all runs in corresponding scenario, find indicators in equilibrium (last X days)
         for run_id in run_ids:
             df_sup = pd.DataFrame(columns = kpis_sup)
             df_dem = pd.DataFrame(columns = kpis_dem)
             series_plf = pd.Series(dtype=int)
+            series_soc = pd.Series(dtype=int)
             for day in range(params_scn[i]['nD'] - params_scn[i]['conv_day'], params_scn[i]['nD']):
                 df_sup = df_sup.append(res.sup[run_id].loc[day], ignore_index=True)
                 df_dem = df_dem.append(res.dem[run_id].loc[day], ignore_index=True)
                 series_plf = series_plf.append(pd.Series([res.plf[run_id][day]]), ignore_index=True)
+                series_soc = series_soc.append(pd.Series([res.soc[run_id][day]]), ignore_index=True)
             eql_runs.sup[i] = eql_runs.sup[i].append(df_sup.mean(axis=0), ignore_index=True) 
             eql_runs.dem[i] = eql_runs.dem[i].append(df_dem.mean(axis=0), ignore_index=True)
             eql_runs.plf[i] = eql_runs.plf[i].append(pd.Series([series_plf.mean()]), ignore_index=True)
+            eql_runs.soc[i] = eql_runs.soc[i].append(pd.Series([series_soc.mean()]), ignore_index=True)
 
         conv_perc_inc = eql_runs.sup[i].mean_perc_inc_reg
-#         conv_perc_inc[np.isnan(conv_perc_inc)] = 0
         conv_perc_wait = eql_runs.dem[i].perc_wait
 
         repl_req_sup = repl_num(perc = conv_perc_inc, params = params_scn[i])
         repl_req_dem = repl_num(perc = conv_perc_wait, params = params_scn[i])
-        repl_req_sys = max(repl_req_sup, repl_req_dem)
-        
-#         repl_req_sys = np.where(repl_req_sys == math.isnan(repl), 0, repl_req_sys)
+        repl_req_sys = max(repl_req_sup, repl_req_dem)        
         repl_req_sys = np.nan_to_num(repl_req_sys)
-#         repl_req_sys[np.isnan(repl_req_sys)] = 0
 
         if repl_req_sys > params_scn[i]['nReplications']:
             print("WARNING: insufficient number of replications: {}/{} for scenario {}".format(params_scn[i]['nReplications'],math.ceil(repl_req_sys),i))
@@ -348,6 +360,7 @@ def runs_to_scenarios(res, params, vals, scn):
         eql_scn.sup = eql_scn.sup.append(eql_runs.sup[i].mean(axis=0), ignore_index=True)
         eql_scn.dem = eql_scn.dem.append(eql_runs.dem[i].mean(axis=0), ignore_index=True)
         eql_scn.plf = eql_scn.plf.append(pd.Series([eql_runs.plf[i].mean()]), ignore_index=True)
+        eql_scn.soc = eql_scn.soc.append(pd.Series([eql_runs.soc[i].mean()]), ignore_index=True)
 
         # Create dataframes for each scenario
         for kpi in kpis_sup:
@@ -355,6 +368,7 @@ def runs_to_scenarios(res, params, vals, scn):
         for kpi in kpis_dem:
             d2d.dem[i][kpi] = empty_df(params = params)
         d2d.plf[i] = empty_df(params = params)
+        d2d.soc[i] = empty_df(params = params)
 
         for k in range(len(run_ids)):
             # Replication within scenario
@@ -364,6 +378,7 @@ def runs_to_scenarios(res, params, vals, scn):
             for kpi in kpis_dem:
                 d2d.dem[i][kpi][k] = res.dem[run_id][kpi]
             d2d.plf[i][k] = res.plf[run_id].values
+            d2d.soc[i][k] = res.soc[run_id].values
 
         # Add mean value and st dev of different replications for a single scenario
         for kpi in kpis_sup:
@@ -374,11 +389,14 @@ def runs_to_scenarios(res, params, vals, scn):
             d2d.dem[i][kpi]['stdev'] = d2d.dem[i][kpi].loc[:, d2d.dem[i][kpi].columns != 'mean'].std(axis=1)
         d2d.plf[i]['mean'] = d2d.plf[i].mean(axis=1)
         d2d.plf[i]['stdev'] = d2d.plf[i].loc[:, d2d.plf[i].columns != 'mean'].std(axis=1)
+        d2d.soc[i]['mean'] = d2d.soc[i].mean(axis=1)
+        d2d.soc[i]['stdev'] = d2d.soc[i].loc[:, d2d.soc[i].columns != 'mean'].std(axis=1)
         
     # Reindex equilibrium database to use scenario values
     eql_scn.sup['scenario'] = vals
     eql_scn.dem['scenario'] = vals
     eql_scn.plf = pd.DataFrame(eql_scn.plf.values, index = vals, columns = ['plat_profit'])
+    eql_scn.soc = pd.DataFrame(eql_scn.soc.values, index = vals, columns = ['soc_value'])
     eql_scn.sup = eql_scn.sup.set_index('scenario')
     eql_scn.dem = eql_scn.dem.set_index('scenario')
     
@@ -396,102 +414,40 @@ def d2d_stats(d2d, vals, res):
         res_scn.dem[kpi] = join_scn_df(d2d.dem,vals,kpi)
     res_scn.plf.plat_profit = pd.DataFrame([d2d.plf[i]['mean'] for i in vals]).T
     res_scn.plf.plat_profit = res_scn.plf.plat_profit.set_axis(vals, axis=1, inplace=False)
+    res_scn.soc.soc_value = pd.DataFrame([d2d.soc[i]['mean'] for i in vals]).T
+    res_scn.soc.soc_value = res_scn.soc.soc_value.set_axis(vals, axis=1, inplace=False)
     
     return res_scn
 
 
-def add_indicators_alt(micro, params, drivers, requests, res):
-    for run_id in range(len(res.sup)):
-        rel_perc_inc =  micro.sup.perc_inc[run_id].div(drivers[run_id].res_wage, axis=0)
-        res.sup[run_id]['rel_perc_inc'] = rel_perc_inc.mean().values
-
-        reg = micro.sup.regist[run_id].replace(False, np.nan)
-        perc_inc_reg = reg * micro.sup.perc_inc[run_id]
-        rel_perc_inc_reg =  perc_inc_reg.div(drivers[run_id].res_wage, axis=0)
-        res.sup[run_id]['rel_perc_inc_reg'] = rel_perc_inc_reg.mean().values
-
-        ptcp = micro.sup.ptcp[run_id].replace(False, np.nan)
-        perc_inc_ptcp = ptcp * micro.sup.perc_inc[run_id]
-        rel_perc_inc_ptcp = perc_inc_ptcp.div(drivers[run_id].res_wage, axis=0)
-        res.sup[run_id]['rel_perc_inc_ptcp'] = rel_perc_inc_ptcp.mean().values
-
-        res.sup[run_id]['std_perc_inc'] = micro.sup.perc_inc[run_id].std(axis=0).values
-        res.sup[run_id]['std_exp_inc'] = micro.sup.exp_inc[run_id].std(axis=0).values
-        res.sup[run_id]['std_perc_inc_reg'] = perc_inc_reg.std(axis=0).values
-        res.sup[run_id]['std_perc_inc_ptcp'] = perc_inc_ptcp.std(axis=0).values
-
-        inf = micro.sup.inform[run_id].replace(False, np.nan)
-        res.sup[run_id]['res_wage_inf'] = inf.mul(drivers[run_id].res_wage, axis=0).mean().values
-        res.sup[run_id]['res_wage_reg'] = reg.mul(drivers[run_id].res_wage, axis=0).mean().values
-        res.sup[run_id]['res_wage_ptcp'] = ptcp.mul(drivers[run_id].res_wage, axis=0).mean().values
-
-        # Regist and deregist
-        init_day = micro.sup.regist[run_id].drop(micro.sup.regist[run_id].columns[-1], axis=1) * 1
-        new_day = micro.sup.regist[run_id].drop(micro.sup.regist[run_id].columns[0], axis=1) * 1
-        init_day.columns = list(map(str, np.arange(1,params[run_id]['nD'])))
-        action = new_day - init_day
-        action.insert(0, '0', np.zeros(len(action.index)))
-        dereg = action < 0
-        regi = action > 0
-        res.sup[run_id]['new_regist'] = regi.sum(axis=0).values
-        res.sup[run_id]['deregist'] = dereg.sum(axis=0).values
-
-        res.dem[run_id].gets_offer = res.dem[run_id].gets_offer / res.dem[run_id].requests
-        inform = (micro.dem.inform[run_id]).replace(False, np.nan)
-        vot_inf =  inform.mul(requests[run_id].VoT, axis=0)
-        res.dem[run_id]['vot_inf'] = vot_inf.mean().values
-
-        req = (micro.dem.requests[run_id]).replace(False, np.nan)
-        vot_req =  req.mul(requests[run_id].VoT, axis=0)
-        res.dem[run_id]['vot_req'] = vot_req.mean().values
-
-        res.dem[run_id]['std_perc_wait'] = micro.dem.perc_wait[run_id].std(axis=0).values
-        res.dem[run_id]['std_exp_wait'] = micro.dem.wait_time[run_id].std(axis=0).values
-        res.dem[run_id]['std_corr_wait'] = micro.dem.corr_wait_time[run_id].std(axis=0).values
-        perc_wait_req = req * micro.dem.perc_wait[run_id]
-        res.dem[run_id]['std_perc_wait_req'] = perc_wait_req.std(axis=0).values
-
-        # Driver surplus
-        ptcp_value = micro.sup.exp_inc[run_id].sub(drivers[run_id].res_wage.values, axis='rows').fillna(0)
-        regist_costs = micro.sup.regist[run_id] * params[run_id]['evol']['drivers']['regist']['cost_comp']
-        driver_surplus = ptcp_value - regist_costs
-        res.sup[run_id]['driver_surplus'] = driver_surplus.sum().values
-
-        # Consumer surplus (welfare gain)
-        prefs = params[run_id]['evol']['travellers']['mode_pref']
-        rs_ivt = requests[run_id].dist / params[run_id]['speeds']['ride']
-        rs_fare = params[run_id]['platforms']['base_fare'] + params[run_id]['platforms']['fare'] * requests[run_id].dist / 1000
-        rs_fare[rs_fare < params[run_id]['platforms']['min_fare']] = params[run_id]['platforms']['min_fare']
-        beta_ivt = requests[run_id].VoT * prefs['beta_cost'] / 3600
-        beta_wait = beta_ivt * prefs['wait_multip']
-        U_rs = beta_ivt * rs_ivt + prefs['beta_cost'] * rs_fare + prefs['ASC_rs']
-        U_wait = micro.dem.wait_time[run_id].mul(beta_wait, axis=0)
-        U_wait_perc  = micro.dem.perc_wait[run_id].mul(beta_wait, axis=0)
-        U_rs = U_wait_perc.add(U_rs,axis=0)
-        exp_U_rs = np.exp(U_rs)
-        exp_df = pd.DataFrame()
-        exp_df['pt'] = np.exp(requests[run_id].U_pt)
-        exp_df['car'] = np.exp(requests[run_id].U_car)
-        exp_df['bike'] = np.exp(requests[run_id].U_bike)
-        exp_sum_alt = exp_df.pt + exp_df.car + exp_df.bike
-        exp_U_tot = exp_U_rs.add(exp_sum_alt, axis=0)
-        exp_U_alts = exp_U_tot - exp_U_rs
-        logsum_tot = np.log(exp_U_tot)
-        logsum_alts = np.log(exp_U_alts)
-        logsum_diff = logsum_tot - logsum_alts
-        U_best_alt = requests[run_id][['U_pt','U_car', 'U_bike']].max(axis=1).to_numpy() # If (negative) utilities are very large, it is very likely that alternative with highest utility is chosen
-        diff_best_alt  = U_rs.subtract(U_best_alt, axis=0)
-        diff_best_alt[diff_best_alt < 0] = 0
-        logsum_inf = (logsum_diff == float("inf"))
-        U_gain = logsum_inf * diff_best_alt + (1-logsum_inf) * logsum_diff
-        U_gain = U_gain * micro.dem.requests[run_id]
-        soc_welfare = (U_gain / -prefs['beta_cost']).sum(axis=0)
-        res.dem[run_id]['cons_surplus'] = soc_welfare.values
-
-        # Platform profit
-        rs_fare = requests[run_id].dist / 1000 * params[run_id]['platforms']['fare'] + params[run_id]['platforms']['base_fare']
-        rs_fare = rs_fare.where(rs_fare > (params[run_id]['platforms']['min_fare']), params[run_id]['platforms']['min_fare'])
-        res.plf[run_id] = micro.dem.requests[run_id].mul(rs_fare,axis=0).sum(axis=0) * params[run_id]['platforms']['comm_rate']
-        
+def add_scn_vals(df, variables):
+    for i in range(len(variables)):
+        if variables["variable_{}".format(i+1)]["int"]:
+            df[variables["variable_{}".format(i+1)]["name"]] = df.index.str.split('_').str.get(i).astype(int)
+        else:
+            df[variables["variable_{}".format(i+1)]["name"]] = df.index.str.split('_').str.get(i).astype(float)
+    df.index.name = 'scenario'
     
-    return res
+    return df
+
+
+def add_eql_supply_indicators(eql_scn, params):
+# Compute additional indicators in equilibrium associated with supply
+
+    res_proc = pd.DataFrame(index = eql_scn.sup.index)
+    res_proc['exp_inc'] = eql_scn.sup.mean_exp_inc.copy()
+    res_proc['wait_time'] = eql_scn.dem.mean_wait / 60
+    res_proc['driv_per_req'] = eql_scn.sup.particip / eql_scn.dem.requests
+    res_proc['mode_share'] = eql_scn.dem.requests / params[0]['nP']
+    res_proc['earn_req_sat'] = eql_scn.sup.mean_exp_inc * eql_scn.sup.particip / (eql_scn.dem.requests * eql_scn.dem.gets_offer)
+    res_proc['serv_req_part'] = eql_scn.dem.gets_offer * eql_scn.dem.requests / eql_scn.sup.particip
+    res_proc['regist'] = eql_scn.sup.regist / eql_scn.sup.inform
+    res_proc['ptcp_prob'] = eql_scn.sup.particip / eql_scn.sup.regist
+    res_proc['match_rate'] = eql_scn.dem.gets_offer.copy()
+    res_proc['match_time'] = eql_scn.dem.match_time / 60
+    res_proc['pickup_time'] = eql_scn.dem.pickup_time / 60
+    res_proc['dh_time'] = eql_scn.sup.mean_dh_time / (params[0]['simTime'] * 3600)
+    res_proc['idle_time'] = eql_scn.sup.share_idle_time
+    
+    return res_proc
+
