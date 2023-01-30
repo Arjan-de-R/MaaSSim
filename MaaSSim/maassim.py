@@ -12,6 +12,7 @@ import networkx as nx
 import simpy
 import time
 import numpy as np
+import random
 import os.path
 import zipfile
 from pathlib import Path
@@ -110,13 +111,14 @@ class Simulator:
         self.pax = dict()  # list of passengers
         self.vehs = dict()  # list of vehicles
         self.plats = dict()  # list of platforms
+        self.ptcp = list() # list of participating drivers
         self.sim_start = None
 
     def generate(self):
         # generate passengers and vehicles as agents in the simulation (inData stays intact)
         for platform_id in self.platforms.index:
             self.plats[platform_id] = PlatformAgent(self, platform_id)
-        for veh_id in self.vehicles.index:
+        for veh_id in random.sample(self.vehicles.index.tolist(), len(self.vehicles.index.tolist())):
             self.vehs[veh_id] = VehicleAgent(self, veh_id)
         for pax_id in self.inData.passengers.index:
             self.pax[pax_id] = PassengerAgent(self, pax_id)
@@ -138,7 +140,7 @@ class Simulator:
         if run_id is None:
             self.logger.warning(f"simulation time {round(self.sim_end - self.sim_start, 1)} s")
         else:
-            self.logger.warning(f"day {run_id}: simulation time {round(self.sim_end - self.sim_start, 1)} s") 
+            self.logger.warning(f"day {run_id}: simulation time {round(self.sim_end - self.sim_start, 1)} s")
         self.make_res(run_id)
         if self.params.get('assert_me', True):
             self.assert_me()  # test consistency of results
@@ -191,7 +193,7 @@ class Simulator:
             logger = logging.getLogger()
             logger.setLevel(level)
             return logging.getLogger(__name__)
-        
+
         logger.setLevel(level)
         return logger
 
@@ -316,3 +318,30 @@ class Simulator:
     def plot_trip(self, pax_id, run_id=None):
         from MaaSSim.visualizations import plot_trip
         plot_trip(self,pax_id, run_id = run_id)
+
+
+    def dump_d2d(self, path=None, dump_id=None, day = 0, csv_zip = None, results=True, inputs=True):
+        """
+        stores resulting files into .zip folder
+        :param path:
+        :param id: run id
+        :param inputs: store input files (vehicles, passengers, platforms)
+        :param results: stor output files (trips, rides, veh, pax KPIs)
+        :return: zip file
+        """
+        if path is None:
+            path = os.getcwd()
+        Path(path).mkdir(parents=True, exist_ok=True)
+        dump_id = self.run_ids[-1] if dump_id is None else dump_id
+
+        # with zipfile.ZipFile(os.path.join(path, 'res{}.zip'.format(dump_id)), 'w') as csv_zip:
+        if inputs:
+            for data in ['vehicles', 'passengers', 'requests', 'platforms']:
+                csv_zip.writestr("day_{}_{}.csv".format(str(day), data), self.inData[data].to_csv())
+        if results:
+            csv_zip.writestr("day_{}_{}.csv".format(str(day), 'trips'), self.runs[day].trips.to_csv())
+            csv_zip.writestr("day_{}_{}.csv".format(str(day), 'rides'), self.runs[day].rides.to_csv())
+            for key in self.res[0].keys():
+                csv_zip.writestr("day_{}_{}.csv".format(str(day), key), self.res[day][key].to_csv())
+
+        return csv_zip
