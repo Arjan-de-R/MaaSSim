@@ -28,6 +28,7 @@ class driverEvent(Enum):
     REPOSITIONED = 13
     DECIDES_NOT_TO_DRIVE = -1
     ENDS_SHIFT = -2
+    NOT_ALLOWED_TO_DRIVE = -3
 
 
 class VehicleAgent(object):
@@ -115,6 +116,13 @@ class VehicleAgent(object):
             msg = "veh {:>4}  {:40} {}".format(self.id, 'opted-out from the system', self.sim.print_now())
             self.sim.logger.info(msg)
             return
+        elif len(self.sim.ptcp) == self.sim.params.platforms.ptcp_cap:  # participation cap already reached
+            self.update(event=driverEvent.NOT_ALLOWED_TO_DRIVE)
+            msg = "veh {:>4}  {:40} {}".format(self.id, 'driver rejected, cap reached', self.sim.print_now())
+            self.sim.logger.info(msg)
+            return
+        else:
+            self.sim.ptcp.append(self.id)
         yield self.sim.timeout(self.veh.shift_start, variability=self.sim.vars.shift)  # wait until shift start
         self.update(event=driverEvent.OPENS_APP)  # in the system
 
@@ -174,5 +182,3 @@ class VehicleAgent(object):
                 msg = "veh {:>4}  {:40} {}".format(self.id, 'quitted shift', self.sim.print_now())
                 self.sim.logger.info(msg)
                 break
-
-
