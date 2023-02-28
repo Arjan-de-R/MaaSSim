@@ -184,10 +184,6 @@ def f_match(**kwargs):
         # requests and vehicles in the column vector form
 
         skimQ = skimQ.drop(platform.tabu, errors='ignore')  # drop already rejected matches
-        
-        if 249 in reqQ:
-            print('At time {}, req queue: {}'.format(sim.env.now,reqQ))
-            print('Veh queue: {}'.format(vehQ))
 
         if skimQ.shape[0] == 0:
             sim.logger.warn("Nobody likes each other, "
