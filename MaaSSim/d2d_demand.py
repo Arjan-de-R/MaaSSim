@@ -139,6 +139,13 @@ def update_d2d_travellers(*args, **kwargs):
     ret['xp_wait'] = sim.last_res.pax_exp.WAIT.to_numpy()
     ret['xp_ivt'] = sim.last_res.pax_exp.TRAVEL.to_numpy()
     ret['xp_ops'] = sim.last_res.pax_exp.OPERATIONS.to_numpy()
+    
+    if params.shareability.get('offered', False):
+        ret['act_shared'] = 9999
+        ret['xp_discount'] = 0
+        ret['xp_discount'] = ret['xp_discount'] + (sim.passengers.mode_day.to_numpy() == 'pool') * ret['gets_offer'] * params.shareability.min_discount # discount for pax choosing pooling
+        ret['xp_discount'] = ret['xp_discount'] + (sim.passengers.mode_day.to_numpy() == 'pool') * ret['gets_offer'] * params.shareability.min_discount # additional discount when actually pooled
+    
     ret.loc[(ret.requests == False) | (ret.gets_offer == False) | (ret.accepts_offer == False), ['xp_wait', 'xp_ivt',
                                                                                                  'xp_ops']] = np.nan
     ret['xp_tt_total'] = ret.xp_wait + ret.xp_ivt + ret.xp_ops
@@ -161,7 +168,10 @@ def d2d_no_request(*args, **kwargs):
     " returns True if traveller does not make RS request, False if he does"
     traveller = kwargs.get('pax',None)
 
-    trav_out = (traveller.pax.mode_day != "rs")
+    if "pool" in traveller.pax.mode_day:
+        trav_out = (traveller.pax.mode_day not in ["rs", "pool"])
+    else:
+        trav_out = (traveller.pax.mode_day != "rs")
 
     return trav_out
 
@@ -218,18 +228,32 @@ def prefs_travs(inData, params):
 def mode_filter(inData, params):
     "mode choice based on no waiting time for RS, used to filter travellers with low probability of using RS"
     passengers = inData.passengers
-    utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt})
+    
     rs_wait = 0
+    utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt})    
     utils['rs'] = util_rs(inData, params, rs_wait)
+    
+    if params.shareability.get('offered', False):
+        pool_wait = 0
+        pool_delay = 0
+        pool_disc = params.shareability.min_discount + params.shareability.add_discount
+        utils['pool'] = util_pool(inData, params, pool_wait, pool_disc, pool_delay)     
 
-    probabilities = mode_probs(utils)
+    probabilities = mode_probs(utils, params)
     cuml = probabilities.cumsum(axis=1)
     draw = cuml.gt(np.random.random(len(passengers)),axis=0) * 1
     probabilities['decis'] = draw.idxmax(axis="columns")
-    probabilities.loc[probabilities.rs > params.evol.travellers.min_prob, "decis"] = 'day-to-day'
-
+    
+    if not params.shareability.get('offered', False):
+        probabilities.loc[probabilities.rs > params.evol.travellers.min_prob, "decis"] = 'day-to-day'
+    else:
+        probabilities.loc[probabilities.rs + probabilities.pool > params.evol.travellers.min_prob, "decis"] = 'day-to-day'
+            
     passengers['mode_choice'] = probabilities.decis
     passengers['prob_rs'] = probabilities.rs
+    
+    if params.shareability.get('offered', False):
+         passengers['prob_pool'] = probabilities.pool
     
     return passengers
 
@@ -240,10 +264,19 @@ def mode_preday(inData, params):
     rs_wait = passengers.expected_wait
     
     U_rs = util_rs(inData, params, rs_wait)
-    utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt, 'rs': U_rs})
-    utils.loc[~inData.passengers.informed, 'rs'] = -math.inf
     
-    probabilities = mode_probs(utils)
+    if not params.shareability.get('offered', False):
+        utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt, 'rs': U_rs})
+        utils.loc[~inData.passengers.informed, 'rs'] = -math.inf
+    else:
+        pool_wait = passengers.expected_wait_pool
+        pool_disc = passengers.expected_pool_discount
+        pool_delay = passengers.expected_pool_delay
+        U_pool = util_pool(inData, params, pool_wait, pool_disc, pool_delay)
+        utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt, 'rs': U_rs, 'pool': U_pool})
+        utils.loc[~inData.passengers.informed, ['rs','pool']] = -math.inf
+    
+    probabilities = mode_probs(utils, params)
     
     cuml = probabilities.cumsum(axis=1)
     draw = cuml.gt(np.random.random(len(passengers)),axis=0) * 1
@@ -281,32 +314,45 @@ def util_alt_modes(inData, params):
         requests['dest_center'] = requests.apply(lambda x: inData.nodes.center.loc[x.destination], axis=1)
         requests.loc[requests.dest_center, 'car_park_cost'] = props.car.park_cost_center
     car_cost = props.car.km_cost * car_ivt * (params.speeds.ride / 1000) + requests.car_park_cost
-    pt_trans_pen = pt_itins.transfers * prefs.transfer_pen
-    pt_ivt = pt_itins.transitTime + pt_trans_pen
-    pt_fare = pt_itins.PTfare
-    pt_wait = pt_itins.waitingTime
-    pt_access = pt_itins.walkDistance / params.speeds.walk
+    
+    if params.alt_modes.pt.option:
+        pt_trans_pen = pt_itins.transfers * prefs.transfer_pen
+        pt_ivt = pt_itins.transitTime + pt_trans_pen
+        pt_fare = pt_itins.PTfare
+        pt_wait = pt_itins.waitingTime
+        pt_access = pt_itins.walkDistance / params.speeds.walk
     bike_tt = requests.ttrav.dt.total_seconds() * (params.speeds.ride / params.speeds.bike)
 
     # Utilities
     U_bike = beta_bike_time * bike_tt + ASC_bike
     U_car = beta_access * props.car.access_time + beta_ivt * car_ivt + prefs.beta_cost * car_cost + ASC_car
-    U_pt = beta_access * pt_access + beta_wait * pt_wait + beta_ivt * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
+    if params.alt_modes.pt.option:
+        U_pt = beta_access * pt_access + beta_wait * pt_wait + beta_ivt * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
+    else:
+        U_pt = -99999
     utils = pd.DataFrame({'bike': U_bike, 'car': U_car, 'pt': U_pt})
     
     return vot, utils
 
 
-def mode_probs(utils):
+def mode_probs(utils, params):
     "determine probabilities of modes based on utilities"
-    exp_sum = np.exp(utils.bike) + np.exp(utils.car) + np.exp(utils.pt) + np.exp(utils.rs)
+    
+    if not params.shareability.get('offered', False):
+        exp_sum = np.exp(utils.bike) + np.exp(utils.car) + np.exp(utils.pt) + np.exp(utils.rs)
+    else:
+        exp_sum = np.exp(utils.bike) + np.exp(utils.car) + np.exp(utils.pt) + np.exp(utils.rs) + np.exp(utils.pool)
     
     P_bike = np.exp(utils.bike) / exp_sum
     P_car = np.exp(utils.car) / exp_sum
     P_pt = np.exp(utils.pt) / exp_sum
-    P_rs = 1 - P_bike - P_car - P_pt
+    P_rs = np.exp(utils.rs) / exp_sum
     
-    probabilities = pd.DataFrame({'bike': P_bike, 'car': P_car, 'pt': P_pt, 'rs': P_rs})
+    if not params.shareability.get('offered', False):
+        probabilities = pd.DataFrame({'bike': P_bike, 'car': P_car, 'pt': P_pt, 'rs': P_rs})
+    else:
+        P_pool = np.exp(utils.pool) / exp_sum
+        probabilities = pd.DataFrame({'bike': P_bike, 'car': P_car, 'pt': P_pt, 'rs': P_rs, 'pool': P_pool})
     
     return probabilities
 
@@ -326,6 +372,22 @@ def util_rs(inData, params, rs_wait):
     
     return U_rs
 
+def util_pool(inData, params, wait, disc, delay):
+    # Determine expected utility of choosing pooling on coming day
+    passengers = inData.passengers
+    requests = inData.requests
+    prefs = params.evol.travellers.mode_pref
+    
+    ivt = requests.ttrav.dt.total_seconds() * (1 + delay)
+    fare = np.ones(len(inData.passengers)) * params.platforms.base_fare + params.platforms.fare * ivt * (params.speeds.ride / 1000)
+    fare[fare < params.platforms.min_fare] += params.platforms.min_fare
+    fare = fare * (1 - disc)
+
+    beta_ivt = passengers.VoT * prefs.beta_cost / 3600
+    beta_wait = beta_ivt * prefs.wait_multip * params.shareability.WtS
+    U = beta_wait * wait + beta_ivt * ivt + prefs.beta_cost * fare + passengers.ASC_rs - params.shareability.get('sharing_constant', 0)
+    
+    return U
 
 def learning_travs(params, prev_perc, exp):
     "returns new perceived waiting time of group of travellers"

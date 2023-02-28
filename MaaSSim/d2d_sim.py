@@ -23,6 +23,8 @@ def d2d_summary_day(evol_micro, drivers_summary, travs_summary, day):
     # Demand
     evol_micro.demand.inform.append(travs_summary.informed.to_list())
     evol_micro.demand.requests.append(travs_summary.requests.to_list())
+    evol_micro.demand.req_solo.append((travs_summary.chosen_mode == 'rs').to_list())
+    evol_micro.demand.req_pool.append((travs_summary.chosen_mode == 'pool').to_list())
     evol_micro.demand.gets_offer.append(travs_summary.gets_offer.to_list())
     evol_micro.demand.accepts_offer.append(travs_summary.accepts_offer.to_list())
     evol_micro.demand.wait_time.append(travs_summary.xp_wait.to_list())
@@ -38,32 +40,65 @@ def d2d_summary_day(evol_micro, drivers_summary, travs_summary, day):
     return evol_micro
 
 
-def d2d_agg_statistics(evol_micro):
+def d2d_agg_statistics(evol_micro, params):
     # create aggregated d2d statistics based on day-to-day statistics of individual agents
-
+    
     # d2d lists to dataframes
     for key in evol_micro.supply:
         evol_micro.supply[key] = pd.DataFrame(evol_micro.supply[key]).T
     for key in evol_micro.demand:
         evol_micro.demand[key] = pd.DataFrame(evol_micro.demand[key]).T
 
-    # Create df with aggregated statistics (not on agent-level)
+    demand = evol_micro.demand
+    supply = evol_micro.supply
+    
     evol_agg = DotMap()
-    evol_agg.supply = pd.DataFrame({'inform': evol_micro.supply.inform.sum(), 'regist': evol_micro.supply.regist.sum(),
-                                    'rejected_reg': evol_micro.supply.rejected_reg.sum(),
-                                    'particip': evol_micro.supply.ptcp.sum(),
-                                    'reject_particip': evol_micro.supply.rejected_ptcp.sum(),
-                                    'mean_perc_inc': evol_micro.supply.perc_inc.mean(),
-                                    'mean_perc_inc_ptcp': evol_micro.supply.perc_inc_ptcp.mean(),
-                                    'mean_perc_inc_reg': evol_micro.supply.perc_inc_reg.mean(),
-                                    'mean_exp_inc': evol_micro.supply.exp_inc.mean()})
+    
+    evol_agg.supply = pd.DataFrame({'inform': supply.inform.sum(), 'regist': supply.regist.sum(),
+                                    'rejected_reg': supply.rejected_reg.sum(),
+                                    'particip': supply.ptcp.sum(),
+                                    'reject_particip': supply.rejected_ptcp.sum(),
+                                    'mean_perc_inc': supply.perc_inc.mean(),
+                                    'mean_perc_inc_ptcp': supply.perc_inc_ptcp.mean(),
+                                    'mean_perc_inc_reg': supply.perc_inc_reg.mean(),
+                                    'mean_exp_inc': supply.exp_inc.mean()})
     evol_agg.supply.index.name = 'day'
-    evol_agg.demand = pd.DataFrame(
-        {'inform': evol_micro.demand.inform.sum(), 'requests': evol_micro.demand.requests.sum(),
-         'gets_offer': evol_micro.demand.gets_offer.sum(), 'accepts_offer': evol_micro.demand.accepts_offer.sum(),
-         'mean_wait': evol_micro.demand.wait_time.mean(), 'corr_mean_wait': evol_micro.demand.corr_wait_time.mean(),
-         'perc_wait': evol_micro.demand.perc_wait.mean(), 'perc_wait_req': evol_micro.demand.perc_wait_req.mean(),
-         'bike': evol_micro.demand.bike.sum(), 'car': evol_micro.demand.car.sum(), 'pt': evol_micro.demand.pt.sum()})
+    
+    if params.shareability.get('offered', False):
+        evol_agg.demand = pd.DataFrame(
+        {'inform': demand.inform.sum(), 'requests': demand.requests.sum(), 'req_solo': demand.req_solo.sum(),
+         'req_pool': demand.req_pool.sum(), 'gets_offer_solo': (demand.gets_offer * demand.req_solo).sum(), 
+         'gets_offer_pooling': (demand.gets_offer * demand.req_pool).sum(),
+#          'accepts_offer': demand.accepts_offer.sum(),
+         'mean_wait_solo': (demand.wait_time * demand.requests).mean(), 'corr_mean_wait_solo': (demand.corr_wait_time * demand.requests).mean(),
+         'mean_wait_pooling': (demand.wait_time * demand.req_pool).mean(), 'corr_mean_wait_pooling': (demand.corr_wait_time * demand.req_pool).mean(),
+         'perc_wait_solo': demand.perc_wait.mean(), 
+         
+         'perc_wait_req': demand.perc_wait_req.mean(),
+         'bike': demand.bike.sum(), 'car': demand.car.sum(), 'pt': demand.pt.sum()})
+    else:
+        
+        ## What aggregated statistics we need in case pooling is offered:
+    # private requests that get offer (served)
+    # pooled rides that are actually shared
+    # pooled rides that are not pooled but served
+    # xp_wait of pooling
+    # xp_wait of private
+    # xp_ivt of pooling (i.e. opted for pooling)
+    # xp_discount of pooling (i.e. opted for pooling)
+    
+    # And check existing stats if they need to be adjusted.
+        
+        
+    # Create df with aggregated statistics (not on agent-level)
+
+        evol_agg.demand = pd.DataFrame(
+            {'inform': demand.inform.sum(), 'requests': demand.requests.sum(), 
+             'gets_offer': demand.gets_offer.sum(), 'accepts_offer': demand.accepts_offer.sum(),
+             'mean_wait': demand.wait_time.mean(), 'corr_mean_wait': demand.corr_wait_time.mean(),
+             'perc_wait': demand.perc_wait.mean(), 'perc_wait_req': demand.perc_wait_req.mean(),
+             'bike': demand.bike.sum(), 'car': demand.car.sum(), 'pt': demand.pt.sum()})
+    
     evol_agg.demand.index.name = 'day'
 
     return evol_micro, evol_agg
@@ -96,6 +131,8 @@ def init_d2d_dotmap():
     evol_micro.demand = DotMap()
     evol_micro.demand.inform = []
     evol_micro.demand.requests = []
+    evol_micro.demand.req_solo = []
+    evol_micro.demand.req_pool = []
     evol_micro.demand.gets_offer = []
     evol_micro.demand.accepts_offer = []
     evol_micro.demand.wait_time = []

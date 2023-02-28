@@ -184,7 +184,10 @@ def f_match(**kwargs):
         # requests and vehicles in the column vector form
 
         skimQ = skimQ.drop(platform.tabu, errors='ignore')  # drop already rejected matches
-
+        
+        if 249 in reqQ:
+            print('At time {}, req queue: {}'.format(sim.env.now,reqQ))
+            print('Veh queue: {}'.format(vehQ))
 
         if skimQ.shape[0] == 0:
             sim.logger.warn("Nobody likes each other, "
@@ -202,7 +205,7 @@ def f_match(**kwargs):
         req_id = request.name
         simpaxes = request.sim_schedule.req_id.dropna().unique()
         simpax = sim.pax[simpaxes[0]]  # first traveller of shared ride (he is a leader and decision maker)
-
+        
         veh.update(event=driverEvent.RECEIVES_REQUEST)
         for i in simpaxes:
             sim.pax[i].update(event=travellerEvent.RECEIVES_OFFER)

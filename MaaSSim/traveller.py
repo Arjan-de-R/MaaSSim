@@ -222,13 +222,15 @@ class PassengerAgent(object):
                 else:
                     self.sim.logger.info("pax {:>4}  {:40} {}".format(self.id, 'has no offers ',
                                                                       self.sim.print_now()))
-                    self.leave_queues()
-                    self.msg = 'lost his patience and left the system'
                 if len(self.offers) > 0:
                     yield self.found_veh
 
             else:
-                yield self.my_schedule_triggered | self.lost_shared_patience
+                yield self.sim.timeout((self.request.treq - self.sim.t0).seconds,
+                                       variability=self.sim.vars.start)  # wait IDLE until the request time
+                self.update(event=travellerEvent.REQUESTS_RIDE)
+                yield self.my_schedule_triggered | self.lost_shared_patience | self.sim.timeout(self.sim.params.times.patience,
+                                                        variability=self.sim.vars.patience)
             if did_i_opt_out:
                 self.msg = 'decided not to travel with MaaS'
                 self.update(event=travellerEvent.PREFERS_OTHER_SERVICE)
