@@ -227,9 +227,16 @@ class PassengerAgent(object):
 
             else:
                 yield self.sim.timeout((self.request.treq - self.sim.t0).seconds,
-                                       variability=self.sim.vars.start)  # wait IDLE until the request time
-                self.update(event=travellerEvent.REQUESTS_RIDE)
-                yield self.my_schedule_triggered | self.lost_shared_patience | self.sim.timeout(self.sim.params.times.patience,
+                                       variability=self.sim.vars.start) | self.my_schedule_triggered  # wait IDLE until the request time
+                if self.sim.env.now < (self.request.treq - self.sim.t0).seconds: # schedule is triggered before request is made
+                    yield self.sim.timeout((int((self.request.treq - self.sim.t0).total_seconds()) - self.sim.env.now),
+                                       variability=self.sim.vars.start)
+                    self.update(event=travellerEvent.REQUESTS_RIDE)
+                    self.update(event=travellerEvent.RECEIVES_OFFER)
+                    self.update(event=travellerEvent.ACCEPTS_OFFER)
+                else:
+                    self.update(event=travellerEvent.REQUESTS_RIDE)
+                    yield self.my_schedule_triggered | self.lost_shared_patience | self.sim.timeout(self.sim.params.times.patience,
                                                         variability=self.sim.vars.patience)
             if did_i_opt_out:
                 self.msg = 'decided not to travel with MaaS'

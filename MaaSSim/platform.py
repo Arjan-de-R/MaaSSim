@@ -152,7 +152,8 @@ class PlatformAgent(object):
         veh = self.sim.vehs[offer['veh_id']]
 
         for i in offer['simpaxes']:
-            self.sim.pax[i].update(event=travellerEvent.ACCEPTS_OFFER)
+            if (self.sim.pax[i].request.treq - self.sim.t0).total_seconds() <= self.sim.env.now:
+                self.sim.pax[i].update(event=travellerEvent.ACCEPTS_OFFER)
             self.sim.pax[i].found_veh.succeed()
             self.sim.pax[i].my_schedule_triggered.succeed()
             self.sim.pax[i].veh = self.sim.vehicles.loc[offer['veh_id']]  # assigne the vehicle to passenger

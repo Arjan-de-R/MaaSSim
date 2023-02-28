@@ -204,7 +204,8 @@ def f_match(**kwargs):
         
         veh.update(event=driverEvent.RECEIVES_REQUEST)
         for i in simpaxes:
-            sim.pax[i].update(event=travellerEvent.RECEIVES_OFFER)
+            if sim.env.now >= (int((sim.pax[i].request.treq - sim.t0).total_seconds())):  # if already requested
+                sim.pax[i].update(event=travellerEvent.RECEIVES_OFFER)
 
         if simpax.veh is not None:  # the traveller already assigned (to a different platform)
             if req_id in platform.reqQ:  # we were too late, forget about it
@@ -239,6 +240,10 @@ def f_match(**kwargs):
                                                              sim.print_now()))
                 platform.tabu.append((vehPos, reqPos))  # they are unmatchable
             else:
+                
+                # if more than one pax: pooled ride is accepted --> add to schedule df
+                ## in general we need to collect pooling statistics (do we take it from schedule, or from exp_rides (events))
+                
                 for i in simpaxes:
                     if not sim.pax[i].got_offered.triggered:
                         sim.pax[i].got_offered.succeed()
