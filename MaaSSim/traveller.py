@@ -238,6 +238,11 @@ class PassengerAgent(object):
                     self.update(event=travellerEvent.REQUESTS_RIDE)
                     yield self.my_schedule_triggered | self.lost_shared_patience | self.sim.timeout(self.sim.params.times.patience,
                                                         variability=self.sim.vars.patience)
+                    if self.veh is None: # non-leader traveller loses patience (no match was found)
+                        simpaxes = self.request.sim_schedule.req_id.dropna().unique()
+                        simpax = self.sim.pax[simpaxes[0]]  # first traveller of shared ride (he is a leader and decision maker)
+                        if (simpax.request.treq - self.sim.t0).seconds + self.sim.params.times.patience > self.sim.env.now:  # schedule leader is still waiting (has not yet lost patience)
+                            simpax.leave_queues()
             if did_i_opt_out:
                 self.msg = 'decided not to travel with MaaS'
                 self.update(event=travellerEvent.PREFERS_OTHER_SERVICE)

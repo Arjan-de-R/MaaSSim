@@ -141,7 +141,7 @@ def update_d2d_travellers(*args, **kwargs):
     ret['xp_ops'] = sim.last_res.pax_exp.OPERATIONS.to_numpy()
     
     if params.shareability.get('offered', False):
-        ret['act_shared'] = 9999
+        ret['act_shared'] = ret.apply(lambda x: True if (len(sim.inData.requests.loc[x.name].sim_schedule.req_id.dropna().unique()) > 1) and x.gets_offer else False, axis=1)  # which travellers actually shared a part of their ride
         ret['xp_discount'] = 0
         ret['xp_discount'] = ret['xp_discount'] + (sim.passengers.mode_day.to_numpy() == 'pool') * ret['gets_offer'] * params.shareability.min_discount # discount for pax choosing pooling
         ret['xp_discount'] = ret['xp_discount'] + (sim.passengers.mode_day.to_numpy() == 'pool') * ret['gets_offer'] * params.shareability.min_discount # additional discount when actually pooled

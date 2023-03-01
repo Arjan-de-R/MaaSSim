@@ -27,6 +27,7 @@ def d2d_summary_day(evol_micro, drivers_summary, travs_summary, day):
     evol_micro.demand.req_pool.append((travs_summary.chosen_mode == 'pool').to_list())
     evol_micro.demand.gets_offer.append(travs_summary.gets_offer.to_list())
     evol_micro.demand.accepts_offer.append(travs_summary.accepts_offer.to_list())
+    evol_micro.demand.act_shared.append(travs_summary.act_shared.tolist())
     evol_micro.demand.wait_time.append(travs_summary.xp_wait.to_list())
     evol_micro.demand.corr_wait_time.append(travs_summary.corr_xp_wait.to_list())
     evol_micro.demand.perc_wait.append(travs_summary.init_perc_wait.to_list())
@@ -68,7 +69,7 @@ def d2d_agg_statistics(evol_micro, params):
         evol_agg.demand = pd.DataFrame(
         {'inform': demand.inform.sum(), 'requests': demand.requests.sum(), 'req_solo': demand.req_solo.sum(),
          'req_pool': demand.req_pool.sum(), 'gets_offer_solo': (demand.gets_offer * demand.req_solo).sum(), 
-         'gets_offer_pooling': (demand.gets_offer * demand.req_pool).sum(),
+         'gets_offer_pooling': (demand.gets_offer * demand.req_pool).sum(), 'act_shared': demand.act_shared.sum(),
 #          'accepts_offer': demand.accepts_offer.sum(),
          'mean_wait_solo': (demand.wait_time * demand.requests).mean(), 'corr_mean_wait_solo': (demand.corr_wait_time * demand.requests).mean(),
          'mean_wait_pooling': (demand.wait_time * demand.req_pool).mean(), 'corr_mean_wait_pooling': (demand.corr_wait_time * demand.req_pool).mean(),
@@ -133,6 +134,7 @@ def init_d2d_dotmap():
     evol_micro.demand.requests = []
     evol_micro.demand.req_solo = []
     evol_micro.demand.req_pool = []
+    evol_micro.demand.act_shared = []
     evol_micro.demand.gets_offer = []
     evol_micro.demand.accepts_offer = []
     evol_micro.demand.wait_time = []
