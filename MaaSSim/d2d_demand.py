@@ -140,12 +140,6 @@ def update_d2d_travellers(*args, **kwargs):
     ret['xp_ivt'] = sim.last_res.pax_exp.TRAVEL.to_numpy()
     ret['xp_ops'] = sim.last_res.pax_exp.OPERATIONS.to_numpy()
     
-    if params.shareability.get('offered', False):
-        ret['act_shared'] = ret.apply(lambda x: True if (len(sim.inData.requests.loc[x.name].sim_schedule.req_id.dropna().unique()) > 1) and x.gets_offer else False, axis=1)  # which travellers actually shared a part of their ride
-        ret['xp_discount'] = 0
-        ret['xp_discount'] = ret['xp_discount'] + (sim.passengers.mode_day.to_numpy() == 'pool') * ret['gets_offer'] * params.shareability.min_discount # discount for pax choosing pooling
-        ret['xp_discount'] = ret['xp_discount'] + (sim.passengers.mode_day.to_numpy() == 'pool') * ret['gets_offer'] * params.shareability.min_discount # additional discount when actually pooled
-    
     ret.loc[(ret.requests == False) | (ret.gets_offer == False) | (ret.accepts_offer == False), ['xp_wait', 'xp_ivt',
                                                                                                  'xp_ops']] = np.nan
     ret['xp_tt_total'] = ret.xp_wait + ret.xp_ivt + ret.xp_ops
@@ -158,6 +152,12 @@ def update_d2d_travellers(*args, **kwargs):
     ret['new_perc_wait'] = new_perc_wait.to_numpy()
     ret.loc[ret.informed & (~ret.requests), 'new_perc_wait'] = ret.loc[ret.informed & (~ret.requests), 'init_perc_wait']
     ret['chosen_mode'] = sim.passengers.mode_day.to_numpy()
+    
+    if params.shareability.get('offered', False):
+        ret['act_shared'] = ret.apply(lambda x: True if (len(sim.inData.requests.loc[x.name].sim_schedule.req_id.dropna().unique()) > 1) and x.gets_offer else False, axis=1)  # which travellers actually shared a part of their ride
+        ret['xp_discount'] = np.nan
+        ret.loc[ret.chosen_mode == 'pool','xp_discount'] = params.shareability.min_discount # discount for opting for pooled service (without actually sharing)
+        ret.loc[ret.act_shared,'xp_discount'] = params.shareability.min_discount + params.shareability.add_discount  # discount for those that actually shared
 
     ret = ret.set_index('pax')
 
