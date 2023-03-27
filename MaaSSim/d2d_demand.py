@@ -158,6 +158,11 @@ def update_d2d_travellers(*args, **kwargs):
         ret['xp_discount'] = np.nan
         ret.loc[ret.chosen_mode == 'pool','xp_discount'] = params.shareability.min_discount # discount for opting for pooled service (without actually sharing)
         ret.loc[ret.act_shared,'xp_discount'] = params.shareability.min_discount + params.shareability.add_discount  # discount for those that actually shared
+        
+        ret['init_perc_disc'] = sim.passengers.expected_pool_disc.to_numpy()
+        new_perc_disc = learning_travs(params = params, prev_perc = ret.init_perc_disc, exp = ret.xp_discount)
+        ret['new_perc_disc'] = new_perc_disc.to_numpy()
+        ret.loc[ret.informed & (ret.chosen_mode != 'pool'), 'new_perc_disc'] = ret.loc[ret.informed & (ret.chosen_mode != 'pool'), 'init_perc_disc']
 
     ret = ret.set_index('pax')
 
@@ -270,7 +275,7 @@ def mode_preday(inData, params):
         utils.loc[~inData.passengers.informed, 'rs'] = -math.inf
     else:
         pool_wait = passengers.expected_wait_pool
-        pool_disc = passengers.expected_pool_discount
+        pool_disc = passengers.expected_pool_disc
         pool_delay = passengers.expected_pool_delay
         U_pool = util_pool(inData, params, pool_wait, pool_disc, pool_delay)
         utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt, 'rs': U_rs, 'pool': U_pool})
@@ -390,7 +395,7 @@ def util_pool(inData, params, wait, disc, delay):
     return U
 
 def learning_travs(params, prev_perc, exp):
-    "returns new perceived waiting time of group of travellers"
+    "returns learned indicators for each traveller"
     kappa = params.evol.travellers.kappa
     new_perc = (1 - kappa) * prev_perc + kappa * exp
     
