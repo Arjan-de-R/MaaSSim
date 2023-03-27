@@ -23,11 +23,8 @@ def d2d_summary_day(evol_micro, drivers_summary, travs_summary, day):
     # Demand
     evol_micro.demand.inform.append(travs_summary.informed.to_list())
     evol_micro.demand.requests.append(travs_summary.requests.to_list())
-    evol_micro.demand.req_solo.append((travs_summary.chosen_mode == 'rs').to_list())
-    evol_micro.demand.req_pool.append((travs_summary.chosen_mode == 'pool').to_list())
     evol_micro.demand.gets_offer.append(travs_summary.gets_offer.to_list())
     evol_micro.demand.accepts_offer.append(travs_summary.accepts_offer.to_list())
-    evol_micro.demand.act_shared.append(travs_summary.act_shared.tolist())
     evol_micro.demand.wait_time.append(travs_summary.xp_wait.to_list())
     evol_micro.demand.corr_wait_time.append(travs_summary.corr_xp_wait.to_list())
     evol_micro.demand.perc_wait.append(travs_summary.init_perc_wait.to_list())
@@ -118,32 +115,32 @@ def D2D_stop_crit(*args, **kwargs):
 
 def init_d2d_dotmap():
     # create empty dotmap for adding daily statistics
+    
     evol_micro = DotMap()
     evol_micro.supply = DotMap()
-    evol_micro.supply.inform = []
-    evol_micro.supply.regist = []
-    evol_micro.supply.rejected_reg = []
-    evol_micro.supply.ptcp = []
-    evol_micro.supply.rejected_ptcp = []
-    evol_micro.supply.perc_inc = []
-    evol_micro.supply.perc_inc_ptcp = []
-    evol_micro.supply.perc_inc_reg = []
-    evol_micro.supply.exp_inc = []
     evol_micro.demand = DotMap()
-    evol_micro.demand.inform = []
-    evol_micro.demand.requests = []
-    evol_micro.demand.req_solo = []
-    evol_micro.demand.req_pool = []
-    evol_micro.demand.act_shared = []
-    evol_micro.demand.gets_offer = []
-    evol_micro.demand.accepts_offer = []
-    evol_micro.demand.wait_time = []
-    evol_micro.demand.corr_wait_time = []
-    evol_micro.demand.perc_wait = []
-    evol_micro.demand.perc_wait_req = []
-    evol_micro.demand.chosen_mode = []
-    evol_micro.demand.bike = []
-    evol_micro.demand.car = []
-    evol_micro.demand.pt = []
+    sup_indics = ['inform','regist','rejected_reg','ptcp','rejected_ptcp','perc_inc','perc_inc_ptcp','perc_inc_reg','exp_inc']
+    dem_indics = ['inform','requests','req_solo','req_pool','act_shared','gets_offer','accepts_offer','wait_time','corr_wait_time','perc_wait','perc_wait_req','chosen_mode','bike','car','pt']
+    
+    for indic in sup_indics:
+        name = indic
+        data = []
+        setattr(evol_micro.supply, name, data)
 
+    for indic in dem_indics:
+        name = indic
+        data = []
+        setattr(evol_micro.demand, name, data)
+
+    return evol_micro
+
+
+def d2d_summ_pooling(evol_micro, travs_summary):
+    evol_micro.demand.req_solo.append((travs_summary.chosen_mode == 'rs').to_list())
+    evol_micro.demand.req_pool.append((travs_summary.chosen_mode == 'pool').to_list())
+    evol_micro.demand.act_shared.append(travs_summary.act_shared.tolist())
+#     evol_micro.demand.xp_disc.append()
+    
+#     sort indices
+    
     return evol_micro
