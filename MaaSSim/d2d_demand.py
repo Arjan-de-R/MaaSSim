@@ -209,9 +209,26 @@ def wom_trav(inData, end_day, **kwargs):
     signals = signal(inData, params, mean, std)
     res_inf['perc_wait'] = end_day.new_perc_wait
     res_inf['signal_wait'] = signals
-    
     res_inf['cond'] = res_inf.informed & (~end_day.informed)
     res_inf['perc_wait'] = res_inf['perc_wait'].where(~res_inf.cond, res_inf['signal_wait'])
+    
+    if params.shareability.get('offered', False):
+        # Discount
+        mean = exp_inf_trav.xp_discount.mean()
+        std = exp_inf_trav.xp_discount.std()
+        signals = signal(inData, params, mean, std)
+        res_inf['perc_disc'] = end_day.new_perc_disc
+        res_inf['signal_disc'] = signals
+        res_inf['perc_disc'] = res_inf['perc_disc'].where(~res_inf.cond, res_inf['signal_disc'])
+        res_inf['perc_disc'] = res_inf['perc_disc'].where(~res_inf.cond, res_inf['signal_disc'])
+#         # Delay
+#         mean = exp_inf_trav.xp_delay.mean() / 60
+#         std = exp_inf_trav.xp_delay.std() / 60
+#         signals = signal(inData, params, mean, std)
+#         res_inf['perc_detour'] = end_day.new_perc_detour
+#         res_inf['signal_detour'] = signals
+        res_inf.drop(['signal_disc'], axis=1)
+    
     res_inf.drop(['signal_wait', 'cond'], axis=1)
 
     return res_inf
