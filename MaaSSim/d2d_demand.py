@@ -185,12 +185,8 @@ def wom_trav(inData, end_day, **kwargs):
     "determine which travellers are informed and the waiting time that is communicated before the start of the new day"
     params = kwargs.get('params', None)
     exp_inf_trav = end_day.loc[end_day.informed]
-    average_xp_wait = exp_inf_trav.corr_xp_wait.mean() / 60
-    std_xp_wait = exp_inf_trav.corr_xp_wait.std() / 60
-    log_mu = np.log(average_xp_wait ** 2 / math.sqrt(std_xp_wait ** 2 + average_xp_wait ** 2))
-    log_std = math.sqrt(np.log(std_xp_wait ** 2 / average_xp_wait ** 2 + 1))
-    signal = (np.random.lognormal(log_mu, params.evol.travellers.inform.std_fact * log_std, len(inData.passengers))) * 60
-    signal = np.where(signal <= 3600, signal, 3600)
+    
+    # Determine which travellers are informed
     nP_inf = inData.passengers.informed.sum()
     nP_uninf = len(inData.passengers) - nP_inf
 
@@ -203,11 +199,20 @@ def wom_trav(inData, end_day, **kwargs):
     new_inf = np.random.rand(len(inData.passengers)) < prob_inf
     prev_inf = inData.passengers.informed.to_numpy()
     informed = (np.concatenate(([prev_inf],[new_inf]),axis=0).transpose()).any(axis=1)
-    res_inf = pd.DataFrame(data = {'informed': informed, 'perc_wait': end_day.new_perc_wait}, index=np.arange(0,len(inData.passengers)))
-    res_inf['signal'] = signal
+    # Create new df for storing learned indicators
+    res_inf = pd.DataFrame(data = {'informed': informed}, index=np.arange(0,len(inData.passengers)))
+    
+    ## Determine signals to informed, yet unregistered agents
+    # Waiting time
+    mean = exp_inf_trav.corr_xp_wait.mean() / 60
+    std = exp_inf_trav.corr_xp_wait.std() / 60
+    signals = signal(inData, params, mean, std)
+    res_inf['perc_wait'] = end_day.new_perc_wait
+    res_inf['signal_wait'] = signals
+    
     res_inf['cond'] = res_inf.informed & (~end_day.informed)
-    res_inf['perc_wait'] = res_inf['perc_wait'].where(~res_inf.cond, res_inf['signal'])
-    res_inf.drop(['signal', 'cond'], axis=1)
+    res_inf['perc_wait'] = res_inf['perc_wait'].where(~res_inf.cond, res_inf['signal_wait'])
+    res_inf.drop(['signal_wait', 'cond'], axis=1)
 
     return res_inf
 
@@ -443,3 +448,12 @@ def consist_OTP_alba(inData, params):
     inData.pt_itinerary.pax_id = inData.pt_itinerary.index
 
     return inData
+
+
+def signal(inData, params, mean, std):
+    log_mu = np.log(mean ** 2 / math.sqrt(std ** 2 + mean ** 2))
+    log_std = math.sqrt(np.log(std ** 2 / mean ** 2 + 1))
+    signal = (np.random.lognormal(log_mu, params.evol.travellers.inform.std_fact * log_std, len(inData.passengers))) * 60
+    signal = np.where(signal <= 3600, signal, 3600)
+    
+    return signal
