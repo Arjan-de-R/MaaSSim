@@ -71,8 +71,8 @@ def d2d_agg_statistics(evol_micro, params):
          'mean_wait_solo': (demand.wait_time * demand.requests).mean(), 'corr_mean_wait_solo': (demand.corr_wait_time * demand.requests).mean(),
          'mean_wait_pooling': (demand.wait_time * demand.req_pool).mean(), 'corr_mean_wait_pooling': (demand.corr_wait_time * demand.req_pool).mean(),
          'perc_wait_solo': demand.perc_wait.mean(), 
-         
          'perc_wait_req': demand.perc_wait_req.mean(),
+         'mean_disc': demand.xp_disc.mean(), 'perc_disc': demand.perc_disc.mean(),
          'bike': demand.bike.sum(), 'car': demand.car.sum(), 'pt': demand.pt.sum()})
     else:
         
@@ -83,7 +83,6 @@ def d2d_agg_statistics(evol_micro, params):
     # xp_wait of pooling
     # xp_wait of private
     # xp_ivt of pooling (i.e. opted for pooling)
-    # xp_discount of pooling (i.e. opted for pooling)
     
     # And check existing stats if they need to be adjusted.
         
@@ -113,14 +112,17 @@ def D2D_stop_crit(*args, **kwargs):
     return bool(ret.abs().max() <= params.evol.conv)
 
 
-def init_d2d_dotmap():
+def init_d2d_dotmap(params):
     # create empty dotmap for adding daily statistics
     
     evol_micro = DotMap()
     evol_micro.supply = DotMap()
     evol_micro.demand = DotMap()
+    
     sup_indics = ['inform','regist','rejected_reg','ptcp','rejected_ptcp','perc_inc','perc_inc_ptcp','perc_inc_reg','exp_inc']
-    dem_indics = ['inform','requests','req_solo','req_pool','act_shared','gets_offer','accepts_offer','wait_time','corr_wait_time','perc_wait','perc_wait_req','chosen_mode','bike','car','pt']
+    dem_indics = ['inform','requests','gets_offer','accepts_offer','wait_time','corr_wait_time','perc_wait','perc_wait_req','chosen_mode','bike','car','pt']
+    if params.shareability.get('offered', False):
+        dem_indics = dem_indics + ['req_solo','req_pool','act_shared','xp_disc','perc_disc']
     
     for indic in sup_indics:
         name = indic
@@ -139,8 +141,8 @@ def d2d_summ_pooling(evol_micro, travs_summary):
     evol_micro.demand.req_solo.append((travs_summary.chosen_mode == 'rs').to_list())
     evol_micro.demand.req_pool.append((travs_summary.chosen_mode == 'pool').to_list())
     evol_micro.demand.act_shared.append(travs_summary.act_shared.tolist())
-#     evol_micro.demand.xp_disc.append()
+    evol_micro.demand.xp_disc.append(travs_summary.xp_discount.tolist())
+    evol_micro.demand.perc_disc.append(travs_summary.init_perc_disc.tolist())
     
-#     sort indices
     
     return evol_micro
