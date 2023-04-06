@@ -39,7 +39,7 @@ def d2d_summary_day(evol_micro, drivers_summary, travs_summary, day):
 
 
 def d2d_agg_statistics(evol_micro, params):
-    # create aggregated d2d statistics based on day-to-day statistics of individual agents
+    '''create aggregated d2d statistics based on day-to-day statistics of individual agents'''
     
     # d2d lists to dataframes
     for key in evol_micro.supply:
@@ -67,28 +67,12 @@ def d2d_agg_statistics(evol_micro, params):
         {'inform': demand.inform.sum(), 'requests': demand.requests.sum(), 'req_solo': demand.req_solo.sum(),
          'req_pool': demand.req_pool.sum(), 'gets_offer_solo': (demand.gets_offer * demand.req_solo).sum(), 
          'gets_offer_pooling': (demand.gets_offer * demand.req_pool).sum(), 'act_shared': demand.act_shared.sum(),
-#          'accepts_offer': demand.accepts_offer.sum(),
          'mean_wait_solo': (demand.wait_time * demand.requests).mean(), 'corr_mean_wait_solo': (demand.corr_wait_time * demand.requests).mean(),
          'mean_wait_pooling': (demand.wait_time * demand.req_pool).mean(), 'corr_mean_wait_pooling': (demand.corr_wait_time * demand.req_pool).mean(),
-         'perc_wait_solo': demand.perc_wait.mean(), 
-         'perc_wait_req': demand.perc_wait_req.mean(),
-         'mean_disc': demand.xp_disc.mean(), 'perc_disc': demand.perc_disc.mean(),
+         'perc_wait_solo': demand.perc_wait.mean(), 'perc_wait_req': demand.perc_wait_req.mean(), 'perc_wait_solo': demand.perc_wait_solo.mean(), 'perc_wait_pool': demand.perc_wait_pool.mean(),
+         'mean_disc': demand.xp_disc.mean(), 'perc_disc': demand.perc_disc.mean(), 'mean_detour': demand.xp_detour.mean(), 'perc_detour': demand.perc_detour.mean(),
          'bike': demand.bike.sum(), 'car': demand.car.sum(), 'pt': demand.pt.sum()})
     else:
-        
-        ## What aggregated statistics we need in case pooling is offered:
-    # private requests that get offer (served)
-    # pooled rides that are actually shared
-    # pooled rides that are not pooled but served
-    # xp_wait of pooling
-    # xp_wait of private
-    # xp_ivt of pooling (i.e. opted for pooling)
-    
-    # And check existing stats if they need to be adjusted.
-        
-        
-    # Create df with aggregated statistics (not on agent-level)
-
         evol_agg.demand = pd.DataFrame(
             {'inform': demand.inform.sum(), 'requests': demand.requests.sum(), 
              'gets_offer': demand.gets_offer.sum(), 'accepts_offer': demand.accepts_offer.sum(),
@@ -122,7 +106,7 @@ def init_d2d_dotmap(params):
     sup_indics = ['inform','regist','rejected_reg','ptcp','rejected_ptcp','perc_inc','perc_inc_ptcp','perc_inc_reg','exp_inc']
     dem_indics = ['inform','requests','gets_offer','accepts_offer','wait_time','corr_wait_time','perc_wait','perc_wait_req','chosen_mode','bike','car','pt']
     if params.shareability.get('offered', False):
-        dem_indics = dem_indics + ['req_solo','req_pool','act_shared','xp_disc','perc_disc']
+        dem_indics = dem_indics + ['req_solo','req_pool','act_shared','perc_wait_solo','perc_wait_pool','xp_disc','perc_disc','xp_detour','perc_detour']
     
     for indic in sup_indics:
         name = indic
@@ -138,11 +122,15 @@ def init_d2d_dotmap(params):
 
 
 def d2d_summ_pooling(evol_micro, travs_summary):
+    '''Compute additional pooling indicators for scenarios in which pooling is offered'''
     evol_micro.demand.req_solo.append((travs_summary.chosen_mode == 'rs').to_list())
     evol_micro.demand.req_pool.append((travs_summary.chosen_mode == 'pool').to_list())
     evol_micro.demand.act_shared.append(travs_summary.act_shared.tolist())
+    evol_micro.demand.perc_wait_solo.append(((travs_summary.chosen_mode == 'rs').replace(False, np.nan) * travs_summary.init_perc_wait).to_list())
+    evol_micro.demand.perc_wait_pool.append(((travs_summary.chosen_mode == 'pool').replace(False, np.nan) * travs_summary.init_perc_wait).to_list())
     evol_micro.demand.xp_disc.append(travs_summary.xp_discount.tolist())
     evol_micro.demand.perc_disc.append(travs_summary.init_perc_disc.tolist())
-    
+    evol_micro.demand.xp_detour.append(travs_summary.xp_detour.tolist())
+    evol_micro.demand.perc_detour.append(travs_summary.init_perc_detour.tolist())
     
     return evol_micro

@@ -158,11 +158,17 @@ def update_d2d_travellers(*args, **kwargs):
         ret['xp_discount'] = np.nan
         ret.loc[ret.chosen_mode == 'pool','xp_discount'] = params.shareability.min_discount # discount for opting for pooled service (without actually sharing)
         ret.loc[ret.act_shared,'xp_discount'] = params.shareability.min_discount + params.shareability.add_discount  # discount for those that actually shared
+        ret['xp_detour'] = ret['xp_ivt'] - sim.inData.requests.ttrav.apply(lambda x: x.total_seconds())
         
         ret['init_perc_disc'] = sim.passengers.expected_pool_disc.to_numpy()
         new_perc_disc = learning_travs(params = params, prev_perc = ret.init_perc_disc, exp = ret.xp_discount)
         ret['new_perc_disc'] = new_perc_disc.to_numpy()
         ret.loc[ret.informed & (ret.chosen_mode != 'pool'), 'new_perc_disc'] = ret.loc[ret.informed & (ret.chosen_mode != 'pool'), 'init_perc_disc']
+        
+        ret['init_perc_detour'] = sim.passengers.expected_pool_detour.to_numpy()
+        new_perc_detour = learning_travs(params = params, prev_perc = ret.init_perc_detour, exp = ret.xp_detour)
+        ret['new_perc_detour'] = new_perc_detour.to_numpy()
+        ret.loc[ret.informed & (ret.chosen_mode != 'pool'), 'new_perc_detour'] = ret.loc[ret.informed & (ret.chosen_mode != 'pool'), 'init_perc_detour']
 
     ret = ret.set_index('pax')
 
@@ -184,6 +190,7 @@ def d2d_no_request(*args, **kwargs):
 def wom_trav(inData, end_day, **kwargs):
     "determine which travellers are informed and the waiting time that is communicated before the start of the new day"
     params = kwargs.get('params', None)
+    
     exp_inf_trav = end_day.loc[end_day.informed]
     
     # Determine which travellers are informed
@@ -220,14 +227,14 @@ def wom_trav(inData, end_day, **kwargs):
         res_inf['perc_disc'] = end_day.new_perc_disc
         res_inf['signal_disc'] = signals
         res_inf['perc_disc'] = res_inf['perc_disc'].where(~res_inf.cond, res_inf['signal_disc'])
-        res_inf['perc_disc'] = res_inf['perc_disc'].where(~res_inf.cond, res_inf['signal_disc'])
-#         # Delay
-#         mean = exp_inf_trav.xp_delay.mean() / 60
-#         std = exp_inf_trav.xp_delay.std() / 60
-#         signals = signal(inData, params, mean, std)
-#         res_inf['perc_detour'] = end_day.new_perc_detour
-#         res_inf['signal_detour'] = signals
-        res_inf.drop(['signal_disc'], axis=1)
+        # Detour
+        mean = exp_inf_trav.xp_detour.mean()
+        std = exp_inf_trav.xp_detour.std()
+        signals = signal(inData, params, mean, std)
+        res_inf['perc_detour'] = end_day.new_perc_detour
+        res_inf['signal_detour'] = signals
+        res_inf['perc_detour'] = res_inf['perc_detour'].where(~res_inf.cond, res_inf['signal_detour'])
+        res_inf.drop(['signal_disc','signal_detour'], axis=1)
     
     res_inf.drop(['signal_wait', 'cond'], axis=1)
 
@@ -298,7 +305,7 @@ def mode_preday(inData, params):
     else:
         pool_wait = passengers.expected_wait_pool
         pool_disc = passengers.expected_pool_disc
-        pool_delay = passengers.expected_pool_delay
+        pool_delay = passengers.expected_pool_detour
         U_pool = util_pool(inData, params, pool_wait, pool_disc, pool_delay)
         utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt, 'rs': U_rs, 'pool': U_pool})
         utils.loc[~inData.passengers.informed, ['rs','pool']] = -math.inf
