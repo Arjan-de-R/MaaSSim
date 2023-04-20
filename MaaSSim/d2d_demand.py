@@ -144,16 +144,32 @@ def update_d2d_travellers(*args, **kwargs):
                                                                                                  'xp_ops']] = np.nan
     ret['xp_tt_total'] = ret.xp_wait + ret.xp_ivt + ret.xp_ops
 
-    ret['init_perc_wait'] = sim.passengers.expected_wait.to_numpy()
-    ret['corr_xp_wait'] = ret.xp_wait.copy()
-    ret.loc[(ret.requests & (~ret.gets_offer)),['corr_xp_wait']] = params.evol.travellers.reject_penalty
-    new_perc_wait = learning_travs(params = params, prev_perc = ret.init_perc_wait, exp = ret.corr_xp_wait)
+    if not params.shareability.get('offered', False):
+        ret['init_perc_wait'] = sim.passengers.expected_wait.to_numpy()
+        ret['corr_xp_wait'] = ret.xp_wait.copy()
+        ret.loc[(ret.requests & (~ret.gets_offer)),['corr_xp_wait']] = params.evol.travellers.reject_penalty
+        new_perc_wait = learning_travs(params = params, prev_perc = ret.init_perc_wait, exp = ret.corr_xp_wait)
 
-    ret['new_perc_wait'] = new_perc_wait.to_numpy()
-    ret.loc[ret.informed & (~ret.requests), 'new_perc_wait'] = ret.loc[ret.informed & (~ret.requests), 'init_perc_wait']
-    ret['chosen_mode'] = sim.passengers.mode_day.to_numpy()
+        ret['new_perc_wait'] = new_perc_wait.to_numpy()
+        ret.loc[ret.informed & (~ret.requests), 'new_perc_wait'] = ret.loc[ret.informed & (~ret.requests), 'init_perc_wait']
+        ret['chosen_mode'] = sim.passengers.mode_day.to_numpy()
     
-    if params.shareability.get('offered', False):
+    else:
+        ret['init_perc_wait'] = sim.passengers.expected_wait.to_numpy()
+        ret['init_perc_wait_pool'] = sim.passengers.expected_wait_pool.to_numpy()
+        ret['corr_xp_wait'] = ret.xp_wait.copy()
+        ret.loc[(ret.requests & (~ret.gets_offer)),['corr_xp_wait']] = params.evol.travellers.reject_penalty
+        
+        new_perc_wait = learning_travs(params = params, prev_perc = ret.init_perc_wait, exp = ret.corr_xp_wait)
+        new_perc_wait_pool = learning_travs(params = params, prev_perc = ret.init_perc_wait_pool, exp = ret.corr_xp_wait)
+        ret['new_perc_wait'] = new_perc_wait.to_numpy()
+        ret['new_perc_wait_pool'] = new_perc_wait_pool.to_numpy()
+        
+        ret['chosen_mode'] = sim.passengers.mode_day.to_numpy()
+        ret.loc[ret.informed & (ret.chosen_mode != 'rs'), 'new_perc_wait'] = ret.loc[ret.informed & (ret.chosen_mode != 'rs'), 'init_perc_wait']
+        ret.loc[ret.informed & (ret.chosen_mode != 'pool'), 'new_perc_wait_pool'] = ret.loc[ret.informed & (ret.chosen_mode != 'rs'), 'init_perc_wait_pool']
+#         ret.loc[ret.informed & (~ret.requests), 'new_perc_wait'] = ret.loc[ret.informed & (~ret.requests), 'init_perc_wait']
+
         ret['act_shared'] = ret.apply(lambda x: True if (len(sim.inData.requests.loc[x.name].sim_schedule.req_id.dropna().unique()) > 1) and x.gets_offer else False, axis=1)  # which travellers actually shared a part of their ride
         ret['xp_discount'] = np.nan
         ret.loc[ret.chosen_mode == 'pool','xp_discount'] = params.shareability.min_discount # discount for opting for pooled service (without actually sharing)
@@ -210,16 +226,35 @@ def wom_trav(inData, end_day, **kwargs):
     res_inf = pd.DataFrame(data = {'informed': informed}, index=np.arange(0,len(inData.passengers)))
     
     ## Determine signals to informed, yet unregistered agents
-    # Waiting time
-    mean = exp_inf_trav.corr_xp_wait.mean() / 60
-    std = exp_inf_trav.corr_xp_wait.std() / 60
-    signals = signal(inData, params, mean, std)
-    res_inf['perc_wait'] = end_day.new_perc_wait
-    res_inf['signal_wait'] = signals
     res_inf['cond'] = res_inf.informed & (~end_day.informed)
-    res_inf['perc_wait'] = res_inf['perc_wait'].where(~res_inf.cond, res_inf['signal_wait'])
     
-    if params.shareability.get('offered', False):
+    if not params.shareability.get('offered', False):
+        # Waiting time
+        mean = exp_inf_trav.corr_xp_wait.mean() / 60
+        std = exp_inf_trav.corr_xp_wait.std() / 60
+        signals = signal(inData, params, mean, std)
+        res_inf['perc_wait'] = end_day.new_perc_wait
+        res_inf['signal_wait'] = signals
+        res_inf['perc_wait'] = res_inf['perc_wait'].where(~res_inf.cond, res_inf['signal_wait'])
+    else:
+        # Waiting time (solo)
+        ## Need to select only travellers that opted for solo rides
+        mean = exp_inf_trav[exp_inf_trav.chosen_mode == 'rs'].corr_xp_wait.mean() / 60
+        std = exp_inf_trav[exp_inf_trav.chosen_mode == 'rs'].corr_xp_wait.std() / 60
+        signals = signal(inData, params, mean, std)
+        res_inf['perc_wait'] = end_day.new_perc_wait
+        res_inf['signal_wait'] = signals
+        res_inf['perc_wait'] = res_inf['perc_wait'].where(~res_inf.cond, res_inf['signal_wait'])
+        
+        # Waiting time (pooled)
+        ## Need to select only travellers that opted for pooled rides
+        mean = exp_inf_trav[exp_inf_trav.chosen_mode == 'pool'].corr_xp_wait.mean() / 60
+        std = exp_inf_trav[exp_inf_trav.chosen_mode == 'pool'].corr_xp_wait.std() / 60
+        signals = signal(inData, params, mean, std)
+        res_inf['perc_wait_pool'] = end_day.new_perc_wait_pool
+        res_inf['signal_wait_pool'] = signals
+        res_inf['perc_wait_pool'] = res_inf['perc_wait_pool'].where(~res_inf.cond, res_inf['signal_wait_pool'])
+        
         # Discount
         mean = exp_inf_trav.xp_discount.mean()
         std = exp_inf_trav.xp_discount.std()
@@ -234,7 +269,7 @@ def wom_trav(inData, end_day, **kwargs):
         res_inf['perc_detour'] = end_day.new_perc_detour
         res_inf['signal_detour'] = signals
         res_inf['perc_detour'] = res_inf['perc_detour'].where(~res_inf.cond, res_inf['signal_detour'])
-        res_inf.drop(['signal_disc','signal_detour'], axis=1)
+        res_inf.drop(['signal_disc','signal_detour','signal_wait_pool'], axis=1)
     
     res_inf.drop(['signal_wait', 'cond'], axis=1)
 

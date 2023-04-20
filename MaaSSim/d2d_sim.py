@@ -69,7 +69,7 @@ def d2d_agg_statistics(evol_micro, params):
          'gets_offer_pooling': (demand.gets_offer * demand.req_pool).sum(), 'act_shared': demand.act_shared.sum(),
          'mean_wait_solo': (demand.wait_time * demand.requests).mean(), 'corr_mean_wait_solo': (demand.corr_wait_time * demand.requests).mean(),
          'mean_wait_pooling': (demand.wait_time * demand.req_pool).mean(), 'corr_mean_wait_pooling': (demand.corr_wait_time * demand.req_pool).mean(),
-         'perc_wait_solo': demand.perc_wait.mean(), 'perc_wait_req': demand.perc_wait_req.mean(), 'perc_wait_solo': demand.perc_wait_solo.mean(), 'perc_wait_pool': demand.perc_wait_pool.mean(),
+         'perc_wait': demand.perc_wait.mean(), 'perc_wait_req': demand.perc_wait_req.mean(), 'perc_wait_pool': demand.perc_wait_pool.mean(),
          'mean_disc': demand.xp_disc.mean(), 'perc_disc': demand.perc_disc.mean(), 'mean_detour': demand.xp_detour.mean(), 'perc_detour': demand.perc_detour.mean(),
          'bike': demand.bike.sum(), 'car': demand.car.sum(), 'pt': demand.pt.sum()})
     else:
@@ -126,8 +126,7 @@ def d2d_summ_pooling(evol_micro, travs_summary):
     evol_micro.demand.req_solo.append((travs_summary.chosen_mode == 'rs').to_list())
     evol_micro.demand.req_pool.append((travs_summary.chosen_mode == 'pool').to_list())
     evol_micro.demand.act_shared.append(travs_summary.act_shared.tolist())
-    evol_micro.demand.perc_wait_solo.append(((travs_summary.chosen_mode == 'rs').replace(False, np.nan) * travs_summary.init_perc_wait).to_list())
-    evol_micro.demand.perc_wait_pool.append(((travs_summary.chosen_mode == 'pool').replace(False, np.nan) * travs_summary.init_perc_wait).to_list())
+    evol_micro.demand.perc_wait_pool.append(travs_summary.init_perc_wait_pool.tolist())
     evol_micro.demand.xp_disc.append(travs_summary.xp_discount.tolist())
     evol_micro.demand.perc_disc.append(travs_summary.init_perc_disc.tolist())
     evol_micro.demand.xp_detour.append(travs_summary.xp_detour.tolist())
