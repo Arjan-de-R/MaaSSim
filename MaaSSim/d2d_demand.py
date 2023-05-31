@@ -167,7 +167,7 @@ def update_d2d_travellers(*args, **kwargs):
         
         ret['chosen_mode'] = sim.passengers.mode_day.to_numpy()
         ret.loc[ret.informed & (ret.chosen_mode != 'rs'), 'new_perc_wait'] = ret.loc[ret.informed & (ret.chosen_mode != 'rs'), 'init_perc_wait']
-        ret.loc[ret.informed & (ret.chosen_mode != 'pool'), 'new_perc_wait_pool'] = ret.loc[ret.informed & (ret.chosen_mode != 'rs'), 'init_perc_wait_pool']
+        ret.loc[ret.informed & (ret.chosen_mode != 'pool'), 'new_perc_wait_pool'] = ret.loc[ret.informed & (ret.chosen_mode != 'pool'), 'init_perc_wait_pool']
 #         ret.loc[ret.informed & (~ret.requests), 'new_perc_wait'] = ret.loc[ret.informed & (~ret.requests), 'init_perc_wait']
 
         ret['act_shared'] = ret.apply(lambda x: True if (len(sim.inData.requests.loc[x.name].sim_schedule.req_id.dropna().unique()) > 1) and x.gets_offer else False, axis=1)  # which travellers actually shared a part of their ride
@@ -279,10 +279,14 @@ def wom_trav(inData, end_day, **kwargs):
 def prefs_travs(inData, params):
     "draw mode preferences for the group of travellers"
     prefs = params.evol.travellers.mode_pref
+    shbl = params.shareability
     passengers = inData.passengers
 
-    vot, utils = util_alt_modes(inData, params)
+    ASCs, vot, utils = util_alt_modes(inData, params)
 
+    passengers['ASC_bike'] = ASCs.bike
+    passengers['ASC_car'] = ASCs.car
+    passengers['ASC_pt'] = ASCs.pt
     passengers['VoT'] = vot
     passengers['U_bike'] = utils.bike
     passengers['U_car'] = utils.car
@@ -290,6 +294,10 @@ def prefs_travs(inData, params):
     
     ASC_rs = np.random.normal(prefs.ASC_rs,prefs.ASC_rs_sd,len(inData.passengers))
     passengers['ASC_rs'] = ASC_rs
+    
+    if params.shareability.get('offered', False):
+        ASC_pool = np.random.normal(ASC_rs + shbl.get('sharing_constant',0),shbl.get('sharing_const_sd',0),len(inData.passengers))
+        passengers['ASC_pool'] = ASC_pool
     
     return passengers
 
@@ -400,8 +408,9 @@ def util_alt_modes(inData, params):
     else:
         U_pt = -99999
     utils = pd.DataFrame({'bike': U_bike, 'car': U_car, 'pt': U_pt})
+    ASCs = pd.DataFrame({'bike': ASC_bike, 'car': ASC_car, 'pt': ASC_pt})
     
-    return vot, utils
+    return ASCs, vot, utils
 
 
 def mode_probs(utils, params):
@@ -453,8 +462,8 @@ def util_pool(inData, params, wait, disc, delay):
     fare = fare * (1 - disc)
 
     beta_ivt = passengers.VoT * prefs.beta_cost / 3600
-    beta_wait = beta_ivt * prefs.wait_multip * params.shareability.WtS
-    U = beta_wait * wait + beta_ivt * ivt + prefs.beta_cost * fare + passengers.ASC_rs - params.shareability.get('sharing_constant', 0)
+    beta_wait = beta_ivt * prefs.wait_multip
+    U = beta_wait * wait + beta_ivt * ivt + prefs.beta_cost * fare + passengers.ASC_pool
     
     return U
 
