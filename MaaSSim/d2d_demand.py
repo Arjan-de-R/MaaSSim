@@ -256,7 +256,7 @@ def mode_preday(inData, params):
 def util_alt_modes(inData, params):
     "determine utility of alternative modes for group of travellers"
     requests = inData.requests
-    pt_itins = inData.pt_itinerary
+    # pt_itins = inData.pt_itinerary
     prefs = params.evol.travellers.mode_pref
     props = params.alt_modes
 
@@ -281,17 +281,19 @@ def util_alt_modes(inData, params):
         requests['dest_center'] = requests.apply(lambda x: inData.nodes.center.loc[x.destination], axis=1)
         requests.loc[requests.dest_center, 'car_park_cost'] = props.car.park_cost_center
     car_cost = props.car.km_cost * car_ivt * (params.speeds.ride / 1000) + requests.car_park_cost
-    pt_trans_pen = pt_itins.transfers * prefs.transfer_pen
-    pt_ivt = pt_itins.transitTime + pt_trans_pen
-    pt_fare = pt_itins.PTfare
-    pt_wait = pt_itins.waitingTime
-    pt_access = pt_itins.walkDistance / params.speeds.walk
+    
+    # pt_trans_pen = pt_itins.transfers * prefs.transfer_pen
+    # pt_ivt = pt_itins.transitTime + pt_trans_pen
+    # pt_fare = pt_itins.PTfare
+    # pt_wait = pt_itins.waitingTime
+    # pt_access = pt_itins.walkDistance / params.speeds.walk
     bike_tt = requests.ttrav.dt.total_seconds() * (params.speeds.ride / params.speeds.bike)
 
     # Utilities
     U_bike = beta_bike_time * bike_tt + ASC_bike
     U_car = beta_access * props.car.access_time + beta_ivt * car_ivt + prefs.beta_cost * car_cost + ASC_car
-    U_pt = beta_access * pt_access + beta_wait * pt_wait + beta_ivt * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
+    # U_pt = beta_access * pt_access + beta_wait * pt_wait + beta_ivt * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
+    U_pt = -99999
     utils = pd.DataFrame({'bike': U_bike, 'car': U_car, 'pt': U_pt})
     
     return vot, utils
@@ -344,35 +346,38 @@ def diff_parking(inData):
 
     return inData
 
-
-def consist_OTP_alba(inData, params):
+def sample_from_alba(inData, params):
+    '''Samples nP from Albatross dataset, replicating requests if nP is larger than size of dataset'''
+#     inData.requests = inData.requests[inData.requests.index.isin(inData.pt_itinerary.index)] # select only requests for which OTP returns itinerary (even if walking is offered)
+#     inData.passengers = inData.passengers[inData.passengers.index.isin(inData.pt_itinerary.index)] # same
+# def consist_OTP_alba(inData, params):
     # Check consistency between Albatross and OTP data
-    inData.requests = inData.requests[inData.requests.index.isin(inData.pt_itinerary.index)]
-    inData.passengers = inData.passengers[inData.passengers.index.isin(inData.pt_itinerary.index)]
+    # inData.requests = inData.requests[inData.requests.index.isin(inData.pt_itinerary.index)]
+    # inData.passengers = inData.passengers[inData.passengers.index.isin(inData.pt_itinerary.index)]
     if params.nP > inData.requests.shape[0]:
         factor = math.floor(params.nP / inData.requests.shape[0])
         mod = params.nP % inData.requests.shape[0]
         df_req = pd.concat(factor * [inData.requests])
         df_pax = pd.concat(factor * [inData.passengers])
-        df_pt = pd.concat(factor * [inData.pt_itinerary])
+        # df_pt = pd.concat(factor * [inData.pt_itinerary])
         df_add_req = inData.requests.sample(mod, replace=False, random_state=1)
         df_add_pax = inData.passengers[inData.passengers.index.isin(df_add_req.index)]
-        df_add_pt = inData.pt_itinerary[inData.pt_itinerary.index.isin(df_add_req.index)]
+        # df_add_pt = inData.pt_itinerary[inData.pt_itinerary.index.isin(df_add_req.index)]
         inData.requests = df_req.append(df_add_req)
         inData.passengers = df_pax.append(df_add_pax)
-        inData.pt_itinerary = df_pt.append(df_add_pt)
+        # inData.pt_itinerary = df_pt.append(df_add_pt)
     else:
         inData.requests = inData.requests.sample(params.nP, replace=False, random_state=1)
         inData.passengers = inData.passengers[inData.passengers.index.isin(inData.requests.index)]
-        inData.pt_itinerary = inData.pt_itinerary[inData.pt_itinerary.index.isin(inData.requests.index)]
+        # inData.pt_itinerary = inData.pt_itinerary[inData.pt_itinerary.index.isin(inData.requests.index)]
     inData.requests = inData.requests.sort_index()
     inData.passengers = inData.passengers.sort_index()
-    inData.pt_itinerary = inData.pt_itinerary.sort_index()
+    # inData.pt_itinerary = inData.pt_itinerary.sort_index()
     inData.requests.reset_index(inplace=True, drop=True)
     inData.requests.pax_id = inData.requests.index
     inData.requests.schedule_id = inData.requests.index
     inData.passengers.reset_index(inplace=True, drop=True)
-    inData.pt_itinerary.reset_index(inplace=True, drop=True)
-    inData.pt_itinerary.pax_id = inData.pt_itinerary.index
+    # inData.pt_itinerary.reset_index(inplace=True, drop=True)
+    # inData.pt_itinerary.pax_id = inData.pt_itinerary.index
 
     return inData

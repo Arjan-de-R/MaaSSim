@@ -110,6 +110,7 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
     if params.get('albatross', False):
         inData = load_albatross_proc(inData, params, avg_speed = True)
         inData.requests = inData.requests.drop(['orig_geo', 'dest_geo', 'origin_y', 'origin_x', 'destination_y', 'destination_x', 'time'], axis = 1)
+        inData = sample_from_alba(inData, params)
         inData.passengers = prefs_travs(inData, params)
 
     # Load processed Albatross file, the OTP result, and compute PT fares
