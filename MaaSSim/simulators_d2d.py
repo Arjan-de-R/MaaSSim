@@ -115,7 +115,6 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
 
     # Load processed Albatross file, the OTP result, and compute PT fares
     # inData.pt_itinerary = load_OTP_result(params)
-    # inData = consist_OTP_alba(inData, params)
 
     # Determine whether to consider all generated requests in day-to-day simulation or only those that are relatively likely to consider ride-hailing
     if params.evol.travellers.get('min_prob', 0) > 0:
@@ -186,10 +185,12 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
         inData.passengers = mode_preday(inData, params) # mode choice
 
         #----- Within-day simulation -----#
-        sim.make_and_run(run_id=day)  # prepare and SIM
-        sim.output()  # calc results
-        sim.last_res = sim.res[day].copy() # create a copy of the results - saved later
-        del sim.res[day] 
+        if params.get('wd_simulator', 'MaaSSim') == 'MaaSSim':
+            sim.make_and_run(run_id=day)  # prepare and SIM
+            sim.output()  # calc results
+            sim.last_res = sim.res[day].copy() # create a copy of the results - saved later
+            del sim.res[day]
+        else: # check this if, is it needed, and continue here
 
         #----- Post-day -----#
         # Determine key KPIs

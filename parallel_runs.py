@@ -16,6 +16,7 @@ params.nP = 1000 # travellers
 params.nV = 50 # drivers
 params.nD = 3 # days
 params.simTime = 8 # hours
+params.wd_simulator = 'MaaSSim'
 
 # Other day-to-day settings
 params.evol.drivers.kappa = 0.2
