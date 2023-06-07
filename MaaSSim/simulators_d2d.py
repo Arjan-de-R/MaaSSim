@@ -46,27 +46,14 @@ def single_pararun(one_slice, *args):
     for key, value in stamp.items():
         filename += '-{}_{}'.format(key, value)
     filename = re.sub('[^-a-zA-Z0-9_.() ]+', '', filename)
-    # _inData.passengers = initialize_df(_inData.passengers)
-    # _inData.requests = initialize_df(_inData.requests)
-    # _inData.vehicles = initialize_df(_inData.vehicles)
 
     sim = simulate(inData=_inData, params=_params, logger_level=logging.WARNING, filename = filename)
-    # sim.dump(dump_id=filename, path = _params.paths.get('dumps', None))  # store results
 
     print(filename, pd.Timestamp.now(), 'end')
     return 0
 
 
 def simulate_parallel(config="../data/config/parallel.json", inData=None, params=None, search_space=None, **kwargs):
-    # from MaaSSim.data_structures import structures as inData
-    # inData.passengers = pd.read_csv(os.getcwd() + '//scenarios//inData//passengers.csv', index_col=0)
-    # inData.requests = pd.read_csv(os.getcwd() + '//scenarios//inData//requests.csv', index_col=0)
-    # inData.requests.treq = pd.to_datetime(inData.requests.treq)
-    # inData.requests.tarr = pd.to_datetime(inData.requests.tarr)
-    # inData.requests.ttrav = pd.to_timedelta(inData.requests.ttrav)
-    # inData.vehicles = pd.read_csv(os.getcwd() + '//scenarios//inData//vehicles.csv', index_col=0)
-    # inData.platforms = pd.read_csv(os.getcwd() + '//scenarios//inData//platforms.csv', index_col=0)
-
     if inData is None:  # otherwise we use what is passed
         from MaaSSim.data_structures import structures
         inData = structures.copy()  # fresh data
@@ -77,17 +64,6 @@ def simulate_parallel(config="../data/config/parallel.json", inData=None, params
         inData = load_G(inData, params, stats=True)  # download graph for the 'params.city' and calc the skim matrices
         if params.alt_modes.car.diff_parking:
             inData = diff_parking(inData)  # determine which nodes are in center
-    # if len(inData.passengers) == 0:  # only if no passengers in input
-    #     inData = generate_demand(inData, params, avg_speed=True)
-    # if len(inData.vehicles) == 0:  # only if no vehicles in input
-    #     inData.vehicles = generate_vehicles(inData, params.nV)
-    # if len(inData.platforms) == 0:  # only if no platforms in input
-    #     inData.platforms = initialize_df(inData.platforms)
-    #     inData.platforms.loc[0] = empty_series(inData.platforms)
-    #     inData.platforms.fare = [1]
-        # inData.vehicles.platform = 0
-        # inData.passengers.platforms = inData.passengers.apply(lambda x: [0], axis=1)
-
 
     brute(func=single_pararun,
           ranges=slice_space(search_space, replications=params.parallel.get("nReplications",1)),
@@ -125,86 +101,56 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
 
     if len(inData.G) == 0:  # only if no graph in input
         inData = load_G(inData, params, stats=True)  # download graph for the 'params.city' and calc the skim matrices
-    # if len(inData.passengers) == 0:  # only if no passengers in input
-    #     inData = generate_demand(inData, params, avg_speed=True)
-    # if len(inData.vehicles) == 0:  # only if no vehicles in input
-    #     inData.vehicles = generate_vehicles(inData, params.nV)
-    # if len(inData.platforms) == 0:  # only if no platforms in input
-    #     inData.platforms = initialize_df(inData.platforms)
-    #     inData.platforms.loc[0] = empty_series(inData.platforms)
-    #     inData.platforms.fare = [1]
 
-    # Set random seeds
+    # Set random seeds used throughout the simulation
     np.random.seed(params.repl_id)
     random.seed(params.repl_id)
 
+    # Generate requests - either based on a distribution or taken from Albatross - and corresponding passenger data
+    if params.get('albatross', False):
+        inData = load_albatross_proc(inData, params, avg_speed = True)
+        inData.requests = inData.requests.drop(['orig_geo', 'dest_geo', 'origin_y', 'origin_x', 'destination_y', 'destination_x', 'time'], axis = 1)
+        inData.passengers = prefs_travs(inData, params)
+
     # Load processed Albatross file, the OTP result, and compute PT fares
-    inData = load_albatross_proc(inData, params, avg_speed = True)
-    inData.requests = inData.requests.drop(['orig_geo', 'dest_geo', 'origin_y', 'origin_x', 'destination_y', 'destination_x', 'time'], axis = 1)
-    inData.pt_itinerary = load_OTP_result(params)
-    inData = consist_OTP_alba(inData, params)
-    # inData.vehicles = pd.read_csv(os.getcwd() + '//scenarios//inData//vehicles.csv', index_col=0)
-    # inData.platforms = pd.read_csv(os.getcwd() + '//scenarios//inData//platforms.csv', index_col=0)
+    # inData.pt_itinerary = load_OTP_result(params)
+    # inData = consist_OTP_alba(inData, params)
 
-    inData.passengers = prefs_travs(inData, params)
-    all_pax = mode_filter(inData, params)
-    inData.passengers = all_pax[all_pax.mode_choice == "day-to-day"]
-    inData.requests = inData.requests[inData.requests.pax_id.isin(inData.passengers.index)]
-    inData.pt_itinerary = inData.pt_itinerary[inData.pt_itinerary.pax_id.isin(inData.passengers.index)]
-    inData.passengers.reset_index(drop=True, inplace=True)
-    inData.requests.reset_index(drop=True, inplace=True)
-    inData.pt_itinerary.reset_index(drop=True, inplace=True)
-    inData.requests['pax_id'] = inData.requests.index
-    inData.pt_itinerary['pax_id'] = inData.pt_itinerary.index
+    # Determine whether to consider all generated requests in day-to-day simulation or only those that are relatively likely to consider ride-hailing
+    if params.evol.travellers.get('min_prob', 0) > 0:
+        all_pax = mode_filter(inData, params)
+        inData.passengers = all_pax[all_pax.mode_choice == "day-to-day"]
+        inData.requests = inData.requests[inData.requests.pax_id.isin(inData.passengers.index)]
+        # inData.pt_itinerary = inData.pt_itinerary[inData.pt_itinerary.pax_id.isin(inData.passengers.index)] # TODO: check compatibility PT alternative
+        inData.passengers.reset_index(drop=True, inplace=True)
+        inData.requests.reset_index(drop=True, inplace=True)
+        # inData.pt_itinerary.reset_index(drop=True, inplace=True)
+        inData.requests['pax_id'] = inData.requests.index
+        # inData.pt_itinerary['pax_id'] = inData.pt_itinerary.index
+    else:
+        all_pax = inData.passengers.copy()
+        all_pax['mode_choice'] == "day-to-day"
 
+    # Generate information available to travellers at the start of the simulation
     inData.passengers['informed'] = np.random.rand(len(inData.passengers)) < params.evol.travellers.inform.prob_start
     inData.passengers['expected_wait'] = params.evol.travellers.inform.start_wait
+    
+    # Generate pool of job seekers
     fixed_supply = generate_vehicles_d2d(inData, params)
     inData.vehicles = fixed_supply.copy()
-    inData.vehicles.platform = inData.vehicles.apply(lambda x: 0, axis = 1)
+    
+    # Determine which platform agents can use
+    inData.vehicles.platform = inData.vehicles.apply(lambda x: 0, axis = 1)  # TODO: allow for multiple platforms
     inData.passengers.platforms = inData.passengers.apply(lambda x: [0], axis = 1)
-
     inData.requests['platform'] = inData.requests.apply(lambda row: inData.passengers.loc[row.name].platforms[0], axis = 1)
+
+    # Set properties of platform(s)
     inData.platforms = pd.concat([inData.platforms,pd.DataFrame(columns=['base_fare','comm_rate','min_fare'])])
     inData.platforms = initialize_df(inData.platforms)
     inData.platforms.loc[0]=[params.platforms.fare,'Uber',30,params.platforms.base_fare,params.platforms.comm_rate,params.platforms.min_fare,]
 
+    # Prepare schedule for shared rides and the within-day simulator
     inData = prep_shared_rides(inData, params.shareability)  # prepare schedules
-
-
-    # # inData = generate_demand(inData, params, avg_speed=True)
-    # inData.passengers = inData.passengers.sample(n=params.nP,random_state=1)
-    # inData.requests = inData.requests.sample(n=params.nP,random_state=1)
-    # all_pax = mode_filter(inData, params)
-    # inData.passengers = all_pax[all_pax.mode_choice == "day-to-day"]
-    # inData.requests = inData.requests[inData.requests.pax_id.isin(inData.passengers.index)]
-    # inData.passengers.reset_index(drop=True, inplace=True)
-    # inData.requests.reset_index(drop=True, inplace=True)
-    # inData.requests['pax_id'] = inData.requests.index
-
-    # inData.passengers['informed'] = np.random.rand(len(inData.passengers)) < params.evol.travellers.inform.prob_start
-    # inData.passengers['expected_wait'] = params.evol.travellers.inform.start_wait
-    # inData.passengers.platforms = inData.passengers.apply(lambda x: [0], axis=1)
-    # inData.requests['platform'] = inData.requests.apply(lambda row: inData.passengers.loc[row.name].platforms[0],
-    #                                                     axis=1)
-    # fixed_supply = generate_vehicles_d2d(inData, params)
-    # inData.vehicles = fixed_supply.copy()
-
-    # inData.vehicles = inData.vehicles.sample(n=params.nV, random_state=2)
-    # inData.vehicles.index = np.arange(1,len(inData.vehicles)+1)
-    # inData.vehicles.platform = inData.vehicles.apply(lambda x: 0, axis=1)
-    # fixed_supply = inData.vehicles.copy()
-
-    # inData.platforms = pd.concat([inData.platforms, pd.DataFrame(columns=['base_fare', 'comm_rate', 'min_fare'])])
-    # inData.platforms = initialize_df(inData.platforms)
-    # inData.platforms.loc[0] = [params.platforms.fare, 'Uber', 30, params.platforms.base_fare,
-    #                            params.platforms.comm_rate, params.platforms.min_fare, ]
-    #
-    # inData = prep_shared_rides(inData, params.shareability)  # prepare schedules
-
-    # d2d = DotMap()
-    # d2d.drivers = dict()
-    # d2d.travs = dict()
     sim = Simulator(inData, params=params,
                     kpi_veh = D2D_veh_exp,
                     kpi_pax = d2d_kpi_pax,
@@ -212,6 +158,7 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
                     f_trav_out = d2d_no_request,
                     f_trav_mode = dummy_False, **kwargs)  # initialize
 
+    # Where will results be stored
     filename = kwargs.get('filename')
     if path is None:
         path = os.getcwd()
@@ -225,46 +172,61 @@ def simulate(config="data/config.json", inData=None, params=None, path = None, *
     df_pax = inData.passengers[['VoT','U_car','U_pt','U_bike']]
     df = pd.concat([df_req, df_pax], axis=1)
     sim_zip.writestr("requests.csv", df.to_csv())
-    sim_zip.writestr("PT_itineraries.csv", inData.pt_itinerary.to_csv())
+    # sim_zip.writestr("PT_itineraries.csv", inData.pt_itinerary.to_csv())
     sim_zip.writestr("vehicles.csv", inData.vehicles[['pos','res_wage']].to_csv())
     sim_zip.writestr("platforms.csv", inData.platforms.to_csv())
     sim_zip.writestr("all_pax.csv", all_pax.to_csv())
     evol_micro = init_d2d_dotmap()
 
+    # Day-to-day simulator
     for day in range(params.get('nD', 1)):  # run iterations
-        inData.passengers = mode_preday(inData, params)
+
+        #----- Pre-day -----#
+        inData.passengers = mode_preday(inData, params) # mode choice
+
+        #----- Within-day simulation -----#
         sim.make_and_run(run_id=day)  # prepare and SIM
         sim.output()  # calc results
-        sim.last_res = sim.res[day].copy()
-        del sim.res[day]
-        # sim_zip = sim.dump_d2d(dump_id=filename, day=day, csv_zip=sim_zip)  # store results
+        sim.last_res = sim.res[day].copy() # create a copy of the results - saved later
+        del sim.res[day] 
 
-        # d2d.drivers[day] = update_d2d_drivers(sim=sim, params=params)
-        # d2d.travs[day] = update_d2d_travellers(sim=sim, params=params)
+        #----- Post-day -----#
+        # Determine key KPIs
         drivers_summary = update_d2d_drivers(sim=sim, params=params)
         travs_summary = update_d2d_travellers(sim=sim, params=params)
-        exp_df = update_work_exp(inData, drivers_summary)
+        
+        # Update work experience of job seekers
+        exp_df = update_work_exp(inData, drivers_summary)   # number of days work experience
         inData.vehicles.work_exp = exp_df.work_exp
+
+        # Supply-side diffusion of platform information
         res_inf_driver = wom_driver(inData, params=params)
-        inData.vehicles.informed = res_inf_driver
-        inData.vehicles.expected_income = learning_unregist(inData, drivers_summary, params = params)
+        inData.vehicles.informed = res_inf_driver   # which job seekers are informed about ride-hailing
+        inData.vehicles.expected_income = learning_unregist(inData, drivers_summary, params = params) # determine what income do unregistered job seekers expect based on communication with others
+        
+        # (De-)registration decisions
         res_regist = platform_regist(inData, drivers_summary, params=params)
         inData.vehicles.registered = res_regist.registered
         inData.vehicles.work_exp = res_regist.work_exp
         inData.vehicles.days_since_reg = res_regist.days_since_reg
-        # inData.vehicles.expected_income = res_regist.expected_income
+        # inData.vehicles.expected_income = res_regist.expected_income # TODO: does it need to be included?
         inData.vehicles.pos = fixed_supply.pos
         inData.vehicles.rejected_reg = res_regist.rejected_reg
+
+        # Demand-side diffusion of platform information
         res_inf_trav = wom_trav(inData, travs_summary, params=params)
         inData.passengers.informed = res_inf_trav.informed
         inData.passengers.expected_wait = res_inf_trav.perc_wait
 
+        # Store KPIs of day
         evol_micro = d2d_summary_day(evol_micro, drivers_summary, travs_summary, day)
 
+        # Stop criterion
         if sim.functions.f_stop_crit(sim=sim):
             break
+
+    # Compute aggregated statistics from individual agent results and store both       
     evol_micro, evol_agg = d2d_agg_statistics(evol_micro)
-    # evol_micro, evol_agg = D2D_summary(d2d=d2d)
     for data_sup in ['inform', 'regist', 'ptcp', 'perc_inc', 'exp_inc']:
         sim_zip.writestr("d2d_driver_{}.csv".format(data_sup), evol_micro.supply.toDict()[data_sup].to_csv())
     for data_dem in ['inform', 'requests', 'wait_time', 'corr_wait_time', 'perc_wait', 'bike', 'car', 'pt']:
