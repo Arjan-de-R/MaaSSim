@@ -1,4 +1,4 @@
-from MaaSSim.traveller import travellerEvent
+from MaaSSim.MaaSSim.traveller import travellerEvent
 import pandas as pd
 import numpy as np
 import math
