@@ -180,7 +180,7 @@ def generate_demand(_inData, _params=None, avg_speed=False):
     distances['p_destination'] = distances['distance'].apply(
         lambda x: math.exp(_params.demand_structure.destinations_dispertion * x))
     if _params.demand_structure.temporal_distribution == 'uniform':
-        treq = np.random.uniform(-_params.simTime * 60 * 60 / 2, _params.simTime * 60 * 60 / 2,
+        treq = np.random.uniform(0, _params.simTime * 60 * 60,
                                  _params.nP)  # apply uniform distribution on request times
     elif _params.demand_structure.temporal_distribution == 'normal':
         treq = np.random.normal(_params.simTime * 60 * 60 / 2,
