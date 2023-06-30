@@ -252,6 +252,7 @@ def learning_drivers(params, out, prev_perc, exp):
 def update_work_exp(inData, end_day):
     df = inData.vehicles.copy()
     df['out'] = end_day.out
-    df.loc[~df.out, "work_exp"] = df.work_exp + 1
+    df['work_exp'] = df.apply(lambda x: x.work_exp + 1 if not x.out else x.work_exp, axis=1)
+    # df.loc[~df.out, "work_exp"] = df.work_exp + 1
 
     return df
