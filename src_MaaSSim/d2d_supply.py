@@ -1,5 +1,5 @@
-from MaaSSim.MaaSSim.driver import driverEvent
-from MaaSSim.MaaSSim.utils import generate_vehicles
+from MaaSSim.src_MaaSSim.driver import driverEvent
+from MaaSSim.src_MaaSSim.utils import generate_vehicles
 import pandas as pd
 import numpy as np
 # import math

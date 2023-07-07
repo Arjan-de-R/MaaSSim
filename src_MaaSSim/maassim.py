@@ -17,12 +17,12 @@ import os.path
 import zipfile
 from pathlib import Path
 
-from MaaSSim.MaaSSim.traveller import PassengerAgent, travellerEvent
-from MaaSSim.MaaSSim.driver import VehicleAgent
-from MaaSSim.MaaSSim.decisions import f_dummy_repos, f_match, dummy_False
-from MaaSSim.MaaSSim.platform import PlatformAgent
-from MaaSSim.MaaSSim.performance import kpi_pax, kpi_veh
-from MaaSSim.MaaSSim.utils import initialize_df
+from MaaSSim.src_MaaSSim.traveller import PassengerAgent, travellerEvent
+from MaaSSim.src_MaaSSim.driver import VehicleAgent
+from MaaSSim.src_MaaSSim.decisions import f_dummy_repos, f_match, dummy_False
+from MaaSSim.src_MaaSSim.platform import PlatformAgent
+from MaaSSim.src_MaaSSim.performance import kpi_pax, kpi_veh
+from MaaSSim.src_MaaSSim.utils import initialize_df
 import sys
 import logging
 

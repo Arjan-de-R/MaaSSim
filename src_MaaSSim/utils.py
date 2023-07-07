@@ -225,9 +225,13 @@ def generate_demand(_inData, _params=None, avg_speed=False):
 
 
 def read_requests_csv(inData, path):
-    from MaaSSim.data_structures import structures
+    from src_MaaSSim.data_structures import structures
     inData.requests = pd.read_csv(path, index_col=1)
+    # if n_pax == None:
+        # n_pax = inData.requests.shape[0]
+    # inData.requests = inData.requests.sample(n_pax, replace=False, random_state=1)
     inData.requests.treq = pd.to_datetime(inData.requests.treq)
+    inData.requests = inData.requests.sort_values(by=['treq'])
     inData.requests['pax_id'] = inData.requests.index.copy()
     inData.requests.ttrav = pd.to_timedelta(inData.requests.ttrav)
     inData.passengers = pd.DataFrame(index=inData.requests.index, columns=structures.passengers.columns)

@@ -9,8 +9,8 @@ import pandas as pd
 from dotmap import DotMap
 from numpy.random.mtrand import choice
 
-from MaaSSim.MaaSSim.driver import driverEvent
-from MaaSSim.MaaSSim.traveller import travellerEvent
+from MaaSSim.src_MaaSSim.driver import driverEvent
+from MaaSSim.src_MaaSSim.traveller import travellerEvent
 
 
 #################

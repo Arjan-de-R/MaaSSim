@@ -1,4 +1,4 @@
-from MaaSSim.MaaSSim.traveller import travellerEvent
+from src_MaaSSim.traveller import travellerEvent
 import pandas as pd
 import numpy as np
 import math
@@ -11,7 +11,6 @@ def load_albatross_proc(_inData, _params, avg_speed=False):
     # loads the full csv of albatross for a given city
     # changes date for today
     # filters for simulation time (t0 hour + simTime)
-    # samples the n
 
     df = pd.read_csv(os.path.join(_params.paths.albatross,
                                   _params.city.split(",")[0] + "_requests_proc.csv"),
@@ -40,17 +39,17 @@ def load_albatross_proc(_inData, _params, avg_speed=False):
     return _inData
 
 
-def load_OTP_result(_params):
+def load_OTP_result(params):
     # loads the attributes of the recommended PT initeraries
 
-    df = pd.read_csv(os.path.join(_params.paths.albatross,
-                                    _params.city.split(",")[0]+"_requests_PT.csv"),
-                 index_col = 'id')
+    df = pd.read_csv(params.paths.PT_trips, index_col='id')
+    df.index.name = 'pax_id'
+    # df.index = df.index.astype(int) 
 
-    df['pax_id'] = df.index
-    cols = df.columns.tolist()
-    cols = cols[-1:] + cols[:-1]
-    df = df[cols]
+    # df['pax_id'] = df.index
+    # cols = df.columns.tolist()
+    # cols = cols[-1:] + cols[:-1]
+    # df = df[cols]
 
     # Determine distance for all PT legs
     # Split mode information in separate legs
@@ -66,7 +65,7 @@ def load_OTP_result(_params):
     legs['PTdistance'] = legs.sum(axis=1, skipna=True)
     df = df.merge(legs['PTdistance'], how='left', left_index=True, right_index=True)
     # Calculate fare
-    df['PTfare'] = round((df['PTdistance'] * (1/1000) * _params.alt_modes.pt.km_fare) + _params.alt_modes.pt.base_fare,2)
+    df['PTfare'] = round((df['PTdistance'] * (1/1000) * params.alt_modes.pt.km_fare) + params.alt_modes.pt.base_fare,2)
     df.loc[(df['PTdistance'] == 0), 'PTfare'] = 9999  # If only walking is used, set PT fare to zero
     
     return df
@@ -271,7 +270,6 @@ def util_alt_modes(inData, params):
 
     # Draw mode preferences (ASCs) for travellers
     ASC_car = np.random.normal(prefs.ASC_car, prefs.ASC_car_sd, params.nP)
-    ASC_pt = np.random.normal(prefs.ASC_pt, prefs.ASC_pt_sd, params.nP)
     ASC_bike = np.random.normal(0, prefs.ASC_bike_sd, params.nP)
     
     # Attributes of modes
@@ -281,19 +279,23 @@ def util_alt_modes(inData, params):
         requests['dest_center'] = requests.apply(lambda x: inData.nodes.center.loc[x.destination], axis=1)
         requests.loc[requests.dest_center, 'car_park_cost'] = props.car.park_cost_center
     car_cost = props.car.km_cost * car_ivt * (params.speeds.ride / 1000) + requests.car_park_cost
-    
-    # pt_trans_pen = pt_itins.transfers * prefs.transfer_pen
-    # pt_ivt = pt_itins.transitTime + pt_trans_pen
-    # pt_fare = pt_itins.PTfare
-    # pt_wait = pt_itins.waitingTime
-    # pt_access = pt_itins.walkDistance / params.speeds.walk
     bike_tt = requests.ttrav.dt.total_seconds() * (params.speeds.ride / params.speeds.bike)
 
     # Utilities
     U_bike = beta_bike_time * bike_tt + ASC_bike
     U_car = beta_access * props.car.access_time + beta_ivt * car_ivt + prefs.beta_cost * car_cost + ASC_car
-    # U_pt = beta_access * pt_access + beta_wait * pt_wait + beta_ivt * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
-    U_pt = -99999
+
+    # PT alternative - if included in simulation
+    if params.paths.get('PT_trips',False):
+        ASC_pt = np.random.normal(prefs.ASC_pt, prefs.ASC_pt_sd, params.nP)
+        pt_trans_pen = inData.requests.transfers * prefs.transfer_pen
+        pt_ivt = inData.requests.transitTime + pt_trans_pen
+        pt_fare = inData.requests.PTfare
+        pt_wait = inData.requests.waitingTime
+        pt_access = inData.requests.walkDistance / params.speeds.walk
+        U_pt = beta_access * pt_access + beta_wait * pt_wait + beta_ivt * pt_ivt + prefs.beta_cost * pt_fare + ASC_pt
+    else:
+        U_pt = -99999 # extremely large penalty so that no one will opt for PT if it is not offered
     utils = pd.DataFrame({'bike': U_bike, 'car': U_car, 'pt': U_pt})
     
     return vot, utils
@@ -348,36 +350,66 @@ def diff_parking(inData):
 
 def sample_from_alba(inData, params):
     '''Samples nP from Albatross dataset, replicating requests if nP is larger than size of dataset'''
-#     inData.requests = inData.requests[inData.requests.index.isin(inData.pt_itinerary.index)] # select only requests for which OTP returns itinerary (even if walking is offered)
-#     inData.passengers = inData.passengers[inData.passengers.index.isin(inData.pt_itinerary.index)] # same
-# def consist_OTP_alba(inData, params):
-    # Check consistency between Albatross and OTP data
-    # inData.requests = inData.requests[inData.requests.index.isin(inData.pt_itinerary.index)]
-    # inData.passengers = inData.passengers[inData.passengers.index.isin(inData.pt_itinerary.index)]
     if params.nP > inData.requests.shape[0]:
         factor = math.floor(params.nP / inData.requests.shape[0])
         mod = params.nP % inData.requests.shape[0]
         df_req = pd.concat(factor * [inData.requests])
         df_pax = pd.concat(factor * [inData.passengers])
-        # df_pt = pd.concat(factor * [inData.pt_itinerary])
         df_add_req = inData.requests.sample(mod, replace=False, random_state=1)
         df_add_pax = inData.passengers[inData.passengers.index.isin(df_add_req.index)]
-        # df_add_pt = inData.pt_itinerary[inData.pt_itinerary.index.isin(df_add_req.index)]
         inData.requests = df_req.append(df_add_req)
         inData.passengers = df_pax.append(df_add_pax)
-        # inData.pt_itinerary = df_pt.append(df_add_pt)
     else:
         inData.requests = inData.requests.sample(params.nP, replace=False, random_state=1)
         inData.passengers = inData.passengers[inData.passengers.index.isin(inData.requests.index)]
-        # inData.pt_itinerary = inData.pt_itinerary[inData.pt_itinerary.index.isin(inData.requests.index)]
     inData.requests = inData.requests.sort_index()
     inData.passengers = inData.passengers.sort_index()
-    # inData.pt_itinerary = inData.pt_itinerary.sort_index()
     inData.requests.reset_index(inplace=True, drop=True)
     inData.requests.pax_id = inData.requests.index
     inData.requests.schedule_id = inData.requests.index
     inData.passengers.reset_index(inplace=True, drop=True)
-    # inData.pt_itinerary.reset_index(inplace=True, drop=True)
-    # inData.pt_itinerary.pax_id = inData.pt_itinerary.index
+
+    return inData
+
+
+def sample_from_alba_different_treq(inData, params):
+    '''Samples nP from Albatross dataset, replicating OD-pairs - but different req time! - if nP is larger than size of dataset'''
+    if params.nP > inData.requests.shape[0]:
+        factor = math.floor(params.nP / inData.requests.shape[0])
+        mod = params.nP % inData.requests.shape[0]
+        df_req = inData.requests.copy()
+        for repl in range(factor):
+            copy_req = inData.requests.copy()
+            copy_req['treq'] = np.random.permutation(copy_req.treq)
+            if repl == (factor - 1):
+                copy_req = copy_req.sample(mod, replace=False, random_state=1)
+            df_req = df_req.append(copy_req)
+        inData.requests = df_req.sort_values(by=['treq'])
+    else:
+        inData.requests = inData.requests.sample(params.nP, replace=False, random_state=1)
+    inData.requests.reset_index(inplace=True, drop=True)
+    inData.requests.pax_id = inData.requests.index
+    inData.requests.schedule_id = inData.requests.index
+
+    return inData.requests
+
+def read_requests_csv(inData, path):
+    # from src_MaaSSim.data_structures import structures
+    inData.requests = pd.read_csv(path, index_col='pax_id')
+
+    return inData 
+
+def sample_from_database(inData, params):
+    "samples nP from large preprocessed demand dataset"
+    inData.requests = inData.requests.sample(params.nP, replace=False, random_state=1)
+    inData.requests.treq = pd.to_datetime(inData.requests.treq)
+    inData.requests.ttrav = pd.to_timedelta(inData.requests.ttrav)
+    inData.requests = inData.requests.sort_values(by=['treq']).reset_index(drop=True)
+    inData.requests.index.name = 'pax_id'
+    inData.passengers = pd.DataFrame(index=inData.requests.index, columns=inData.passengers.columns)
+    inData.passengers['pax_id'] = inData.passengers.index.copy()
+    inData.passengers.pos = inData.requests.origin.copy()
+    inData.passengers.platforms = inData.passengers.platforms.apply(lambda x: [0])
+    inData.passengers = inData.passengers.set_index('pax_id')
 
     return inData

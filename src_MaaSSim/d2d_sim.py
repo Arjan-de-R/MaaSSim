@@ -108,3 +108,40 @@ def init_d2d_dotmap():
     evol_micro.demand.pt = []
 
     return evol_micro
+
+
+def return_scn_params(_params, key, val):
+    '''updates parameter files, including scenario-specific parameters'''
+    if key in ['comm_rate', 'fare', 'base_fare', 'reg_cap', 'ptcp_cap']:
+        _params.platforms[key] = val
+    if key in ['comm_rate', 'fare', 'base_fare', 'reg_cap', 'ptcp_cap']:
+            _params.platforms[key] = val
+    if key == 'gini':
+        _params.evol.drivers[key] = val
+        _params.evol.travellers.mode_pref[key] = val
+    if key == 'inf_dem':
+        _params.evol.travellers.inform.beta = val
+    if key == 'inf_sup':
+        _params.evol.drivers.inform.beta = val
+    if key == 'inf_start_dem':
+        _params.evol.travellers.inform.prob_start = val
+    if key == 'inf_start_sup':
+        _params.evol.drivers.inform.prob_start = val
+    if key == 'reg_start':
+        _params.evol.drivers.regist.prob_start = val
+    if key == 'init_inc_ratio':
+        _params.evol.drivers[key] = val
+    if key == 'start_wait':
+        _params.evol.travellers.inform[key] = val
+    if key in ['cost_comp', 'samp', 'min_days']:
+        _params.evol.drivers.regist[key] = val
+    if key == 'kappa':
+        _params.evol.travellers[key] = val
+    if key == 'beta_reg':
+        _params.evol.drivers.regist.beta = val
+    if key == 'beta_ptcp':
+        _params.evol.drivers.particip.beta = val
+    else:
+        _params[key] = val
+
+    return _params
