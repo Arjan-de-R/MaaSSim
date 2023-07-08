@@ -1,8 +1,8 @@
 {
-    "NAME": "Delft_FleetPy",
-    "city": "Delft, Netherlands",
-    "nP": 200,
-    "nV": 50,
+    "NAME": "Ams_FleetPy",
+    "city": "Amsterdam, Netherlands",
+    "nP": 5000,
+    "nV": 100,
     "times": {
         "request": 15,
         "transaction": 20,
@@ -21,8 +21,8 @@
         "main": "/Users/rkucharski/Documents/GitHub/MaaSSim",
         "data": "/Users/rkucharski/Documents/GitHub/MaaSSim/data",
         "params": "MaaSSim\\data\\config",
-        "G": "MaaSSim\\data\\graphs\\Delft.graphml",
-        "skim": "MaaSSim\\data\\graphs\\Delft.csv",
+        "G": "MaaSSim\\data\\graphs\\Amsterdam.graphml",
+        "skim": "MaaSSim\\data\\graphs\\Amsterdam.csv",
         "_ipython_display_": {},
         "_repr_mimebundle_": {},
         "_repr_html_": {},
@@ -34,12 +34,14 @@
         "_repr_latex_": {},
         "_repr_json_": {},
         "_repr_javascript_": {},
-        "fleetpy_config": "constant_config.csv"
+        "fleetpy_config": "constant_config.csv",
+        "requests": "MaaSSim/data/demand/Amsterdam/albatross/preprocessed.csv",
+        "PT_trips": "MaaSSim/data/demand/Amsterdam/albatross/req_PT.csv"
     },
     "dist_threshold": 100000,
     "big_time": 10,
     "sleep": false,
-    "simTime": 2,
+    "simTime": 8,
     "demand_structure": {
         "origins_dispertion": -0.0003,
         "destinations_dispertion": -0.001,

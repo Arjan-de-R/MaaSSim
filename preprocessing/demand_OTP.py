@@ -17,20 +17,20 @@ from dotmap import DotMap
 
 params = DotMap()
 # Set main parameters
-params.city = "Delft, Netherlands"
-params = get_config('MaaSSim/data/config/Delft.json')
-params.paths.albatross = 'MaaSSim/data/albatross'
+params.city = "Amsterdam, Netherlands"
+params = get_config(os.path.join(MAASSIM_DIR,'data','config','ams_2B.json'))
+params.paths.albatross = os.path.join(MAASSIM_DIR,'data','albatross')
 params.repl_id = 0
-params.albatross = False  # if False, demand is artificially generated
-params.nP = 500 # travellers
+params.albatross = True  # if False, demand is artificially generated
+params.nP = 200000 # travellers
 params.dist_threshold_min = 2000 # min dist
 # Start and sim time
 params.t0 = pd.Timestamp(2023, 9, 19, 9) # YMDH
 params.simTime = 8
 
 # Set right paths
-params.paths.G = 'MaaSSim/data/graphs/{}.graphml'.format(params.city.split(",")[0])
-params.paths.skim = 'MaaSSim/data/graphs/{}.csv'.format(params.city.split(",")[0])
+params.paths.G = os.path.join(MAASSIM_DIR,'data','graphs','{}.graphml'.format(params.city.split(",")[0]))
+params.paths.skim = os.path.join(MAASSIM_DIR,'data','graphs/{}.csv'.format(params.city.split(",")[0]))
                                                         
 def input_for_OTP(config="data/config.json", inData=None, params=None, path = None, **kwargs):
     """
@@ -71,9 +71,9 @@ def input_for_OTP(config="data/config.json", inData=None, params=None, path = No
     # Save trip properties
     dem_type = 'albatross' if params.get('albatross',False) else 'distribution'
     inData.requests = inData.requests.set_index('pax_id')
-    inData.requests.to_csv(os.path.join('MaaSSim','data','demand','{}'.format(params.city.split(",")[0]),'{}'.format(dem_type),'preprocessed.csv'))
+    inData.requests.to_csv(os.path.join(MAASSIM_DIR,'data','demand','{}'.format(params.city.split(",")[0]),'{}'.format(dem_type),'preprocessed.csv'))
     # Save (only) required input for OTP
-    inData.requests[['treq','origin_x','origin_y','destination_x','destination_y']].to_csv(os.path.join('MaaSSim','preprocessing','OTP_input','{}'.format(params.city.split(",")[0]),'georequests_{}.csv'.format(dem_type)),index_label=['pax_id'])
+    inData.requests[['treq','origin_x','origin_y','destination_x','destination_y']].to_csv(os.path.join(MAASSIM_DIR,'preprocessing','OTP_input','{}'.format(params.city.split(",")[0]),'georequests_{}.csv'.format(dem_type)),index_label=['pax_id'])
 
 
 input_for_OTP(params=params)
