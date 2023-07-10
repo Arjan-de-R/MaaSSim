@@ -1,5 +1,6 @@
 from MaaSSim.src_MaaSSim.driver import driverEvent
 from MaaSSim.src_MaaSSim.utils import generate_vehicles
+from source.d2d.supply import set_multihoming_drivers
 import pandas as pd
 import numpy as np
 # import math
@@ -17,23 +18,43 @@ def generate_vehicles_d2d(_inData, _params=None):
     event is set to STARTS_DAY
     """
 
-    # np.random.seed(_params.repl_id)
     vehs = generate_vehicles(_inData, _params.nV)
 
-    # vehs.expected_income = np.nan
     lognorm_std = 2 * erfinv(_params.evol.drivers.gini)
     lognorm_mean = np.log(_params.evol.drivers.res_wage.mean) - (lognorm_std ** 2) / 2
-
     vehs['res_wage'] = np.random.lognormal(lognorm_mean, lognorm_std, _params.nV) * _params.simTime
-    vehs['informed'] = (np.random.rand(_params.nV) < _params.evol.drivers.inform.prob_start)
-    vehs['registered'] = (np.random.rand(_params.nV) < _params.evol.drivers.regist.prob_start) & vehs.informed
-    vehs['expected_income'] = _params.evol.drivers.init_inc_ratio * vehs.res_wage
-    vehs.loc[~vehs.informed, 'expected_income'] = np.nan
+
+    # Set multi-homing behaviour
+    vehs = set_multihoming_drivers(vehs, _params)
+    
+    # Determine which platforms job seekers are informed about
+    rand_informed = np.random.rand(_params.nV, _params.nS) < _params.evol.drivers.inform.prob_start
+    col_list = [plf_id for plf_id in _inData.platforms.index.tolist()]
+    df = pd.DataFrame(rand_informed, columns=col_list, index=vehs.index)
+    vehs['informed'] = df.apply(lambda x: np.array([x[col] for col in df.columns]), axis=1)
+
+    # Determine which platforms job seekers are registered with
+    primary_plf = np.full_like(rand_informed, False) # if agent single-homes, what platform will he register with first
+    num_rows, num_cols = primary_plf.shape
+    row_indices = np.arange(num_rows)
+    col_indices = np.random.randint(num_cols, size=num_rows)
+    primary_plf[row_indices, col_indices] = True
+    primary_plf[vehs.multihoming, :] = True # for multi-homers, all are considered 'primary' as they can sign up with multiple
+    rand_regist = (np.random.rand(_params.nV, _params.nS) < _params.evol.drivers.regist.prob_start) * rand_informed * primary_plf
+    df = pd.DataFrame(rand_regist, columns=col_list, index=vehs.index)
+    vehs['registered'] = df.apply(lambda x: np.array([x[col] for col in df.columns]), axis=1)
+
+    perc_income = rand_informed * _params.evol.drivers.init_inc_ratio * vehs.res_wage.values.reshape(-1, 1)
+    perc_income[perc_income == 0] = np.nan
+    df = pd.DataFrame(perc_income, columns=col_list, index=vehs.index)
+    vehs['expected_income'] = df.apply(lambda x: np.array([x[col]/x.count() for col in df.columns]), axis=1)
+    
     vehs['work_exp'] = np.nan
     vehs['days_since_reg'] = np.nan
     vehs['rejected_reg'] = False
-    vehs.loc[vehs.registered, 'days_since_reg'] = 0
-    vehs.loc[vehs.registered, 'work_exp'] = 0
+
+    vehs.loc[rand_regist.sum(axis=1) > 0, 'days_since_reg'] = 0
+    vehs.loc[rand_regist.sum(axis=1) > 0, 'work_exp'] = 0
 
     return vehs
 
@@ -114,7 +135,7 @@ def update_d2d_drivers(*args, **kwargs):
     ret['forced_out'] = sim.last_res.veh_exp.FORCED_OUT.to_numpy()
     ret['rejected_reg'] = sim.vehicles.rejected_reg.to_numpy()
     ret.loc[ret.out, 'exp_inc'] = np.nan
-    new_perc_inc = learning_drivers(params=params, prev_perc=ret.init_perc_inc, exp=ret.exp_inc.fillna(0), out=ret.out)
+    new_perc_inc = learning_drivers(ret, params=params)
 
     ret['new_perc_inc'] = new_perc_inc.to_numpy()
     cols = list(ret.columns)
@@ -241,12 +262,20 @@ def D2D_driver_out(*args, **kwargs):
     return bool(perc_income < veh.veh.res_wage)
 
 
-def learning_drivers(params, out, prev_perc, exp):
+def learning_drivers(df_exp, params):
     "returns new perceived income of group of drivers"
-    kappa = params.evol.drivers.kappa * (1 - out)
-    new_perc = (1 - kappa) * prev_perc + kappa * exp
+    # prev_perc=ret.init_perc_inc, exp=ret.exp_inc.fillna(0),
 
-    return new_perc
+    # kappa = params.evol.drivers.kappa * (1 - df_exp.out)
+    # df_exp['prev_perc'] = df_exp.apply(lambda row: np.array(list(map(float,row.init_perc_inc.split(";"))), axis=1))
+    df = df_exp['init_perc_inc','out','exp_inc']
+    df['kappa'] = df.apply(lambda row: row.out * params.evol.drivers.kappa, axis=1)
+    df['new_perc_inc'] = df.apply(lambda row: row.kappa * row.exp_inc + (1-row.kappa) * row.init_perc_inc, axis=1)
+    # df_exp['new_perc_inc'] = df_exp.apply(lambda row: row.out * row.prev_perc * , axis=1)
+
+    # new_perc = (1 - kappa) * prev_perc + kappa * exp
+
+    return df['new_perc_inc']
 
 
 def update_work_exp(inData, end_day):
