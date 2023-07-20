@@ -1,6 +1,7 @@
 from MaaSSim.src_MaaSSim.driver import driverEvent
 from MaaSSim.src_MaaSSim.utils import generate_vehicles
-from source.d2d.supply import set_multihoming_drivers, sh_init_reg, zero_to_nan
+from source.d2d.supply import set_multihoming_drivers, sh_init_reg
+from source.d2d.utils import zero_to_nan
 import pandas as pd
 import numpy as np
 # import math
@@ -172,14 +173,6 @@ def platform_regist(inData, end_day, **kwargs):
     "determine probability of registering at platform overnight for all unregistered drivers"
     params = kwargs.get('params', None)
     
-    # # save input for debugging
-    # inData.vehicles.to_csv('debug_vehicles.csv')
-    # inData.platforms.to_csv('debug_platforms.csv')
-    # end_day.to_csv('debug_end-day.csv')
-    # import json
-    # with open("debug_params.json", "w") as outfile:
-    #     json.dump(params, outfile)
-
     def signal_mh(params, avg_perc_earnings_mh, std_perc_earnings_mh):
         rand_signal = np.random.normal(avg_perc_earnings_mh, params.evol.drivers.inform.std_fact * std_perc_earnings_mh, size=params.nV)
         return rand_signal
@@ -257,7 +250,6 @@ def platform_regist(inData, end_day, **kwargs):
     regist_df['signal_plf'] = regist_df.apply(lambda _: signal_plf(params, avg_perc_earnings_plf, std_perc_earnings_plf), axis=1)
     regist_df['relevant_signal'] = regist_df.apply(lambda row: row.signal_mh if row.multihoming else row.signal_plf, axis=1)
     regist_df['new_perc_inc'] = regist_df.apply(lambda row: new_perc_after_communication(row), axis=1)
-    print(regist_df)
     # First: determine probability to participate (when registered) depending on expected earnings
     regist_df['res_wage'] = inData.vehicles.res_wage
     regist_df['util_ptcp'] = regist_df.apply(lambda row: params.evol.drivers.particip.beta * row.new_perc_inc, axis=1)
@@ -276,7 +268,7 @@ def platform_regist(inData, end_day, **kwargs):
     regist_df['regist_plf'] = regist_df.apply(lambda row: regist_plf(inData, row), axis=1)
     regist_df['reg_outcome'] = regist_df.apply(lambda row: np.where(row.regist_plf & ~row.prev_regist, 1, np.where(row.regist_plf & row.prev_regist, 0, np.where(~row.regist_plf & ~row.prev_regist, 0, -1))), axis=1) # 1: newly registered with plf, 0: same status as before, -1 deregistered with plf
     
-    if not math.isinf(params.platforms.reg_cap): # TODO: regist cap per platform
+    if params.platforms.reg_cap: # TODO: regist cap per platform
         max_entrants = params.platforms.reg_cap - still_regist.sum()
         regist_df['lot_ticket'] = np.random.rand(params.nV) * regist_df.regist_decision
         regist_df['lot_rank'] = regist_df.lot_ticket.rank(method='first', ascending=False)
