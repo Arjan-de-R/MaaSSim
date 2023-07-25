@@ -4,16 +4,26 @@ import numpy as np
 
 
 def d2d_summary_day(drivers_summary, travs_summary):
-    "add stats of last day to d2d dataframe"
+    "add stats of last day to d2d dataframe and prepare for saving to csv"
 
     # Demand
     indicators = ['informed', 'registered', 'requests', 'gets_offer', 'accepts_offer', 'init_perc_wait',
-                           'xp_wait', 'corr_xp_wait', 'init_perc_ivt', 'xp_ivt', 'init_perc_km_fare', 'xp_km_fare', 'chosen_mode']
+                           'xp_wait', 'corr_xp_wait', 'init_perc_ivt', 'xp_ivt', 'init_perc_km_fare', 'xp_km_fare', 'init_perc_util', 'chosen_mode']
     dem_df = travs_summary[indicators].copy()
-
+    for col in dem_df:
+        if isinstance(dem_df.head(1)[col].values[0], np.ndarray):
+            # dem_df[[col+'_0',col+'_1']] = dem_df[col].apply(pd.Series)
+            dem_df[[col+'_0',col+'_1']] = np.stack(dem_df[col].values)
+            dem_df = dem_df.drop(columns=[col])
+    
     # Supply
-    indicators = ['informed', 'registered', 'out', 'init_perc_inc', 'exp_inc']
+    indicators = ['informed', 'registered', 'out', 'init_perc_inc', 'exp_inc', 'init_perc_util']
     sup_df = drivers_summary[indicators].copy()
+    for col in sup_df:
+        if isinstance(sup_df.head(1)[col].values[0], np.ndarray):
+            # sup_df[[col+'_0',col+'_1']] = sup_df[col].apply(pd.Series)
+            sup_df[[col+'_0',col+'_1']] = np.stack(sup_df[col].values)
+            sup_df = sup_df.drop(columns=[col])
 
     return dem_df, sup_df
 

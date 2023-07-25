@@ -169,7 +169,7 @@ def learning_unregist(inData, end_day, **kwargs):
     return df.expected_income
 
 
-def platform_regist(inData, end_day, **kwargs):
+def platform_regist_driver(inData, end_day, **kwargs):
     "determine probability of registering at platform overnight for all unregistered drivers"
     params = kwargs.get('params', None)
     
@@ -241,9 +241,11 @@ def platform_regist(inData, end_day, **kwargs):
     regist_df['reg_any'] = regist_df.apply(lambda row: row.prev_regist.sum() > 0, axis=1)
     regist_df['perc_inc_rel'] = regist_df.apply(lambda row: np.nanmean(row.expected_income) * row.reg_any, axis=1) # relevant perc inc for learning
     avg_perc_earnings_mh = regist_df.loc[regist_df.multihoming].perc_inc_rel.mean()
+    print('driver mh perc kpi: {}'.format(avg_perc_earnings_mh))
     std_perc_earnings_mh = regist_df.loc[regist_df.multihoming].perc_inc_rel.std(ddof=0)
     regist_df['perc_inc_reg'] = regist_df.apply(lambda row: np.where((row.prev_regist * row.expected_income) == 0, np.nan, row.prev_regist * row.expected_income), axis=1)
     avg_perc_earnings_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_inc_reg.to_list(), axis=0) # list with average perceived earnings per platform
+    print('driver plf perc kpi: {}'.format(avg_perc_earnings_plf))
     std_perc_earnings_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_inc_reg.to_list(), axis=0, ddof=0)
     
     regist_df['signal_mh'] = signal_mh(params, avg_perc_earnings_mh, std_perc_earnings_mh)
@@ -310,8 +312,8 @@ def D2D_driver_out(*args, **kwargs):
 def learning_drivers(df_exp, params):
     "returns new perceived income of group of drivers"
     df = df_exp[['init_perc_inc','out','exp_inc']]
-    df['kappa'] = df.apply(lambda row: ~row.out * params.evol.drivers.kappa, axis=1)
-    df['new_perc_inc'] = df.apply(lambda row: zero_to_nan(np.nan_to_num(row.kappa * row.exp_inc) + np.nan_to_num((1-row.kappa) * row.init_perc_inc)), axis=1)
+    df['kappa'] = df.apply(lambda row: np.nan_to_num(~row.out * params.evol.drivers.kappa), axis=1)
+    df['new_perc_inc'] = df.apply(lambda row: np.nan_to_num(row.kappa * row.exp_inc) + ((1-row.kappa) * row.init_perc_inc), axis=1)
 
     return df['new_perc_inc']
 

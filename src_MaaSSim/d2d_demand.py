@@ -121,20 +121,32 @@ def offer_accepted(params, row):
     return array
 
 
-def determine_corr_xp_wait(row):
+def determine_corr_xp_wait(params, row):
     '''determine experienced waiting considering rejection penalty, and per platform'''
-    if np.any(row.requests) and not np.any(row.gets_offer):
+    if np.any(np.logical_and(row.requests[~np.isnan(row.requests)], True)) and not np.any(np.logical_and(row.gets_offer[~np.isnan(row.gets_offer)], True)): # requested but no offer
         corr_xp_wait = params.evol.travellers.reject_penalty * zero_to_nan(row.requests * np.ones(len(row.xp_wait)))
     else:
         corr_xp_wait = row.xp_wait * zero_to_nan(row.requests * np.ones(len(row.xp_wait)))
     return corr_xp_wait
 
 
-def learning_new_kpi(params, perc, xp, requests):
-        '''determine new perceived value for indicator based on experience'''
-        kappa_plf = params.evol.travellers.kappa * requests
-        new_perc_kpi = (1 - kappa_plf) * perc + kappa_plf * xp
-        return new_perc_kpi
+def learning_new_kpi(params, perc, xp, requests, gets_offer):
+    '''determine new perceived value for indicator (not waiting time) based on experience'''
+    if not np.any(requests):
+        kappa_plf = np.full(len(requests), 0)
+    elif requests.sum() > 1:  # traveller is multi-homer (and participating in the market)
+        kappa_plf = params.evol.travellers.kappa * np.full(len(requests), np.any(gets_offer))
+    else: # single-homer traveller participating 
+        kappa_plf = params.evol.travellers.kappa * np.nan_to_num(gets_offer)
+    new_perc_kpi = (1 - kappa_plf) * perc + np.nan_to_num(kappa_plf * xp)
+    return new_perc_kpi
+
+
+def learning_new_wait(params, perc, xp, requests):
+    '''update new perceived waiting time (which is non-zero when ride request was rejected)'''
+    kappa_plf = requests * params.evol.travellers.kappa
+    new_perc_kpi = (1 - kappa_plf) * perc + np.nan_to_num(kappa_plf * xp)
+    return new_perc_kpi
 
 
 def determine_xp_fare(sim, row):
@@ -163,8 +175,8 @@ def update_d2d_travellers(*args, **kwargs):
     ret['requests'] = (pax.mode_day == 'rs').to_numpy()
     ret['requests'] =  ret.apply(lambda row: row.requests * row.registered, axis=1)
     ret['LOSES_PATIENCE'] = sim.last_res.pax_exp.LOSES_PATIENCE
-    ret['gets_offer'] = ret.apply(lambda row: np.where(np.isnan(row.LOSES_PATIENCE), np.nan, ~row.LOSES_PATIENCE.astype(bool)), axis=1)
-    ret['gets_offer'] = ret.apply(lambda row: (row.gets_offer * row.requests).astype(np.bool), axis=1)
+    ret['gets_offer'] = ret.apply(lambda row: ~np.where(row.LOSES_PATIENCE == None, True, row.LOSES_PATIENCE).astype(bool), axis=1)
+    ret['gets_offer'] = ret.apply(lambda row: row.gets_offer * row.requests, axis=1)
     ret['accepts_offer'] = sim.last_res.pax_exp.apply(lambda row: offer_accepted(params, row), axis=1)
     ret['xp_wait'] = sim.last_res.pax_exp.WAIT.to_numpy()
     ret['xp_ivt'] = sim.last_res.pax_exp.TRAVEL.to_numpy()
@@ -179,10 +191,11 @@ def update_d2d_travellers(*args, **kwargs):
     ret['init_perc_ivt'] = sim.passengers.expected_ivt.to_numpy()
     ret['init_perc_km_fare'] = sim.passengers.expected_km_fare.to_numpy()
     ret['corr_xp_wait'] = ret.xp_wait.copy()
-    ret['corr_xp_wait'] = ret.apply(lambda row: determine_corr_xp_wait(row), axis=1)
-    ret['new_perc_wait'] = ret.apply(lambda row: learning_new_kpi(params, row.init_perc_wait, row.corr_xp_wait, row.requests), axis=1)
-    ret['new_perc_ivt'] = ret.apply(lambda row: learning_new_kpi(params, row.init_perc_ivt, row.xp_ivt, row.requests), axis=1)
-    ret['new_perc_fare'] = ret.apply(lambda row: learning_new_kpi(params, row.init_perc_km_fare, row.xp_km_fare, row.requests), axis=1)
+    ret['corr_xp_wait'] = ret.apply(lambda row: determine_corr_xp_wait(params, row), axis=1)
+    ret['new_perc_wait'] = ret.apply(lambda row: learning_new_wait(params, row.init_perc_wait, row.corr_xp_wait, row.requests), axis=1)
+    ret['new_perc_ivt'] = ret.apply(lambda row: learning_new_kpi(params, row.init_perc_ivt, row.xp_ivt, row.requests, row.gets_offer), axis=1)
+    ret['new_perc_fare'] = ret.apply(lambda row: learning_new_kpi(params, row.init_perc_km_fare, row.xp_km_fare, row.requests, row.gets_offer), axis=1)
+    
     ret['chosen_mode'] = sim.passengers.mode_day.to_numpy()
     ret = ret.set_index('pax')
     ret = ret.drop(columns=['LOSES_PATIENCE'])
@@ -271,19 +284,18 @@ def mode_filter(inData, params):
 def perc_rs_indicators(row):
     '''determine utility of opting for ridesourcing today'''
     registered_anywhere = (row.registered.sum() > 0) # registered with at least one platform
-    if row.multihoming:
+    if row.multihoming and registered_anywhere:
         expected_wait = row.expected_wait[0]
         expected_ivt = row.expected_ivt[0]
         expected_fare = row.expected_km_fare[0]
+    elif not row.multihoming and registered_anywhere:
+        expected_wait = row.expected_wait[row.registered][0] # wait time of one you are registered with
+        expected_ivt = row.expected_ivt[row.registered][0] # same but for ivt
+        expected_fare = row.expected_km_fare[row.registered][0] # same but for ivt
     else:
-        if registered_anywhere:  # registered with a platform
-            expected_wait = row.expected_wait[row.registered][0] # wait time of one you are registered with
-            expected_ivt = row.expected_ivt[row.registered][0] # same but for ivt
-            expected_fare = row.expected_km_fare[row.registered][0] # same but for ivt
-        else:
-            expected_wait = math.inf
-            expected_ivt = math.inf
-            expected_fare = math.inf
+        expected_wait = math.inf
+        expected_ivt = math.inf
+        expected_fare = math.inf
     return expected_wait, expected_ivt, expected_fare
 
 
@@ -397,7 +409,7 @@ def util_plfs(inData, params, row):
             ASC_rs = row.ASC_rs
         else:
             ASC_rs = row.ASC_pool
-        util_plf = util_plf + [util_rs(inData, params, row.new_perc_wait[plf], row.new_perc_ivt[plf], row.new_perc_fare[plf], trav_vot=row.VoT, trav_ASC=ASC_rs)]
+        util_plf = util_plf + [util_rs(inData, params, row.perc_wait[plf], row.perc_ivt[plf], row.perc_fare[plf], trav_vot=row.VoT, trav_ASC=ASC_rs)]
     return util_plf
 
 
@@ -520,9 +532,11 @@ def platform_regist_trav(inData, end_day, **kwargs):
     def new_perc_kpi(regist_df):
         regist_df['perc_kpi_rel'] = regist_df.apply(lambda row: np.nanmean(row.expected_kpi) * row.reg_any, axis=1) # relevant perc kpi for learning
         avg_perc_kpi_mh = regist_df.loc[regist_df.multihoming].perc_kpi_rel.mean()
+        print('trav mh perc kpi: {}'.format(avg_perc_kpi_mh))
         std_perc_kpi_mh = regist_df.loc[regist_df.multihoming].perc_kpi_rel.std(ddof=0)
         regist_df['perc_kpi_reg'] = regist_df.apply(lambda row: np.where((row.prev_regist * row.expected_kpi) == 0, np.nan, row.prev_regist * row.expected_kpi), axis=1)
         avg_perc_kpi_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0) # list with average perceived indicator per platform
+        print('trav plf avg_perc_kpi: {}'.format(avg_perc_kpi_plf))
         std_perc_kpi_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0, ddof=0)
         regist_df['signal_mh'] = signal_mh(params, avg_perc_kpi_mh, std_perc_kpi_mh)
         regist_df['signal_plf'] = regist_df.apply(lambda _: signal_plf(params, avg_perc_kpi_plf, std_perc_kpi_plf), axis=1)
@@ -573,7 +587,7 @@ def platform_regist_trav(inData, end_day, **kwargs):
         df = new_perc_kpi(df)
         regist_df['new_perc_{}'.format(kpi)] = df["new_perc_kpi"].copy()
     
-    regist_df['util_reg_plf'] = regist_df.apply(lambda row: util_plfs(inData, params, row), axis=1)
+    regist_df['util_reg_plf'] = regist_df.rename(columns={"new_perc_wait": "perc_wait", "new_perc_ivt": "perc_ivt", "new_perc_fare": "perc_fare"}).apply(lambda row: util_plfs(inData, params, row), axis=1)
     regist_df['prob_plf'] = regist_df.apply(lambda row: np.array([(np.exp(row.util_reg_plf[plf]) / np.exp(row.util_reg_plf).sum()) for plf in inData.platforms.index]), axis=1)
     regist_df['chosen_plf_index'] = regist_df.apply(lambda row: np.random.choice(len(row.prob_plf), p=np.nan_to_num(row.prob_plf)) if (np.nan_to_num(row.prob_plf).sum() != 0) else 0, axis=1)
 
