@@ -35,7 +35,7 @@ def generate_vehicles_d2d(_inData, _params=None):
     vehs['registered'] = (np.random.rand(_params.nV) < _params.evol.drivers.regist.prob_start) * rand_informed
     vehs['registered'] = vehs.apply(lambda row: (row.registered * np.full(len(_inData.platforms.index),True)) if row.multihoming else sh_init_reg(row.registered * np.full(len(_inData.platforms.index),True)), axis=1) # multi-homers, else single-homers
     if _params.evol.drivers.get('start_perc_inc_avg_ratio', False):
-        vehs['expected_income'] = _params.evol.drivers.start_perc_inc_avg_ratio * vehs.res_wage.mean() # everyone expects (factor of) mean reservation wage in population
+        vehs['expected_income'] = vehs.apply(lambda row: zero_to_nan(row.registered * _params.evol.drivers.start_perc_inc_avg_ratio * vehs.res_wage.mean()), axis=1)  # everyone expects (factor of) mean reservation wage in population
     else:
         vehs['expected_income'] = vehs.apply(lambda row: zero_to_nan(row.registered * _params.evol.drivers.init_inc_ratio * row.res_wage), axis=1) # expect (factor of) own res wage
     vehs['rejected_reg'] = False
