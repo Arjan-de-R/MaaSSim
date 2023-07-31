@@ -515,45 +515,54 @@ def platform_regist_trav(inData, end_day, **kwargs):
             signal_list.append(rand_signal)
         return signal_list
     
-    def new_perc_after_communication(row):
+    def new_perc_after_communication_trav(row):
+        # First replace nan signals (when there are no sh/mh travs per plf) by previous expected kpi 
+        if row.multihoming:
+            if math.isnan(row.relevant_signal):
+                row.relevant_signal = row.expected_kpi[0]
+        else:
+            nan_mask = np.isnan(row.relevant_signal)
+            row.relevant_signal = np.where(nan_mask, row.expected_kpi, row.relevant_signal)
+        # Now determine new expected kpi
         if not row.decis or np.all(row.prev_regist): # not making a decision today or already registered with all platforms
             new_perc_kpi = row.expected_kpi
         else:
             if row.multihoming: # multihoming and not registered with any platform
-                if np.any(row.expected_kpi): # if you have a previous expectation
-                    kappa_comm = params.evol.drivers.kappa_comm
+                if np.any(~np.isnan(row.expected_kpi)): # if you have a previous expectation
+                    kappa_comm = params.evol.travellers.kappa_comm
                 else:
                     kappa_comm = 1
             else:
-                kappa_comm = np.nan_to_num(np.isnan(row.expected_kpi) * ~row.prev_regist) * 1 + np.nan_to_num(params.evol.drivers.kappa_comm * ~np.isnan(row.expected_kpi))
+                kappa_comm = np.nan_to_num(np.isnan(row.expected_kpi) * ~row.prev_regist) * 1 + np.nan_to_num(params.evol.travellers.kappa_comm * ~np.isnan(row.expected_kpi) * ~row.prev_regist)
             new_perc_kpi = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_kpi) * (1 - kappa_comm)
         return new_perc_kpi
     
     def new_perc_kpi(regist_df):
         regist_df['perc_kpi_rel'] = regist_df.apply(lambda row: np.nanmean(row.expected_kpi) * row.reg_any, axis=1) # relevant perc kpi for learning
         avg_perc_kpi_mh = regist_df.loc[regist_df.multihoming].perc_kpi_rel.mean()
-        print('trav mh perc kpi: {}'.format(avg_perc_kpi_mh))
+        # print('trav mh perc kpi: {}'.format(avg_perc_kpi_mh))
         std_perc_kpi_mh = regist_df.loc[regist_df.multihoming].perc_kpi_rel.std(ddof=0)
         regist_df['perc_kpi_reg'] = regist_df.apply(lambda row: np.where((row.prev_regist * row.expected_kpi) == 0, np.nan, row.prev_regist * row.expected_kpi), axis=1)
         avg_perc_kpi_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0) # list with average perceived indicator per platform
-        print('trav plf avg_perc_kpi: {}'.format(avg_perc_kpi_plf))
+        # print('trav plf avg_perc_kpi: {}'.format(avg_perc_kpi_plf))
         std_perc_kpi_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0, ddof=0)
         regist_df['signal_mh'] = signal_mh(params, avg_perc_kpi_mh, std_perc_kpi_mh)
         regist_df['signal_plf'] = regist_df.apply(lambda _: signal_plf(params, avg_perc_kpi_plf, std_perc_kpi_plf), axis=1)
         regist_df['relevant_signal'] = regist_df.apply(lambda row: row.signal_mh if row.multihoming else row.signal_plf, axis=1)
-        regist_df['new_perc_kpi'] = regist_df.apply(lambda row: new_perc_after_communication(row), axis=1)
+        regist_df['new_perc_kpi'] = regist_df.apply(lambda row: new_perc_after_communication_trav(row), axis=1)
         return regist_df
     
     def regist_plf(inData, row):
         '''returns boolean array with each item indicating whether you are registered with that platform after today'''
         reg_arr = row.prev_regist # if not making a registration decision
-        if row.decis & (row.days_since_reg >= params.evol.travellers.regist.min_days):
-            reg_arr = np.full(len(inData.platforms.index), False) # standard: don't want to be registered with any platform
-            if row.satisfied: # want to be registered
-                if row.multihoming:
-                    reg_arr = np.full(len(inData.platforms.index), True)
-                else:
-                    reg_arr[row.chosen_plf_index] = True 
+        if row.decis:
+            if (row.prev_regist.sum() == 0) or (row.days_since_reg >= params.evol.travellers.regist.min_days): # either not previously registered or sufficient days registered
+                reg_arr = np.full(len(inData.platforms.index), False) # standard: don't want to be registered with any platform
+                if row.satisfied: # want to be registered
+                    if row.multihoming:
+                        reg_arr = np.full(len(inData.platforms.index), True)
+                    else:
+                        reg_arr[row.chosen_plf_index] = True 
         return reg_arr
     
     def return_days(reg_outcome, days):

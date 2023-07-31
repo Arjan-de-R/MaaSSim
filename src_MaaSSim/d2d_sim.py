@@ -12,8 +12,8 @@ def d2d_summary_day(drivers_summary, travs_summary):
     dem_df = travs_summary[indicators].copy()
     for col in dem_df:
         if isinstance(dem_df.head(1)[col].values[0], np.ndarray):
-            # dem_df[[col+'_0',col+'_1']] = dem_df[col].apply(pd.Series)
-            dem_df[[col+'_0',col+'_1']] = np.stack(dem_df[col].values)
+            new_col_list = ['{}_{}'.format(col, plf_id) for plf_id in range(len(dem_df.head(1)[col].values[0]))]
+            dem_df[new_col_list] = np.stack(dem_df[col].values)
             dem_df = dem_df.drop(columns=[col])
     
     # Supply
@@ -21,8 +21,8 @@ def d2d_summary_day(drivers_summary, travs_summary):
     sup_df = drivers_summary[indicators].copy()
     for col in sup_df:
         if isinstance(sup_df.head(1)[col].values[0], np.ndarray):
-            # sup_df[[col+'_0',col+'_1']] = sup_df[col].apply(pd.Series)
-            sup_df[[col+'_0',col+'_1']] = np.stack(sup_df[col].values)
+            new_col_list = ['{}_{}'.format(col, plf_id) for plf_id in range(len(sup_df.head(1)[col].values[0]))]
+            sup_df[new_col_list] = np.stack(sup_df[col].values)
             sup_df = sup_df.drop(columns=[col])
 
     return dem_df, sup_df
