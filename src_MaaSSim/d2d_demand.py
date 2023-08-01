@@ -538,11 +538,11 @@ def platform_regist_trav(inData, end_day, **kwargs):
         return new_perc_kpi
     
     def new_perc_kpi(regist_df):
-        regist_df['perc_kpi_rel'] = regist_df.apply(lambda row: np.nanmean(row.expected_kpi) * row.reg_any, axis=1) # relevant perc kpi for learning
+        regist_df['perc_kpi_rel'] = regist_df.apply(lambda row: np.nanmean(row.expected_kpi) if row.reg_any else np.nan, axis=1) # relevant perc kpi for learning
         avg_perc_kpi_mh = regist_df.loc[regist_df.multihoming].perc_kpi_rel.mean()
         # print('trav mh perc kpi: {}'.format(avg_perc_kpi_mh))
         std_perc_kpi_mh = regist_df.loc[regist_df.multihoming].perc_kpi_rel.std(ddof=0)
-        regist_df['perc_kpi_reg'] = regist_df.apply(lambda row: np.where((row.prev_regist * row.expected_kpi) == 0, np.nan, row.prev_regist * row.expected_kpi), axis=1)
+        regist_df['perc_kpi_reg'] = regist_df.apply(lambda row: np.where(row.prev_regist == False, np.nan, row.prev_regist * row.expected_kpi), axis=1)
         avg_perc_kpi_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0) # list with average perceived indicator per platform
         # print('trav plf avg_perc_kpi: {}'.format(avg_perc_kpi_plf))
         std_perc_kpi_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0, ddof=0)

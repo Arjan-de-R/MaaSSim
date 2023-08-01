@@ -258,11 +258,11 @@ def platform_regist_driver(inData, end_day, **kwargs):
     ### If a job seeker is currently unregistered, he seeks information about platform earnings, which he receives with noise
     ## Multi-homer: interested in multi-homing earnings (of reg. job seekers) only
     regist_df['reg_any'] = regist_df.apply(lambda row: row.prev_regist.sum() > 0, axis=1)
-    regist_df['perc_inc_rel'] = regist_df.apply(lambda row: np.nanmean(row.expected_income) * row.reg_any, axis=1) # relevant perc inc for learning
+    regist_df['perc_inc_rel'] = regist_df.apply(lambda row: np.nanmean(row.expected_income) if row.reg_any else np.nan, axis=1) # relevant perc inc for learning
     avg_perc_earnings_mh = regist_df.loc[regist_df.multihoming].perc_inc_rel.mean()
     # print('driver mh perc kpi: {}'.format(avg_perc_earnings_mh))
     std_perc_earnings_mh = regist_df.loc[regist_df.multihoming].perc_inc_rel.std(ddof=0)
-    regist_df['perc_inc_reg'] = regist_df.apply(lambda row: np.where((row.prev_regist * row.expected_income) == 0, np.nan, row.prev_regist * row.expected_income), axis=1)
+    regist_df['perc_inc_reg'] = regist_df.apply(lambda row: np.where(row.prev_regist == False, np.nan, row.prev_regist * row.expected_income), axis=1)
     avg_perc_earnings_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_inc_reg.to_list(), axis=0) # list with average perceived earnings per platform
     # print('driver plf perc kpi: {}'.format(avg_perc_earnings_plf))
     std_perc_earnings_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_inc_reg.to_list(), axis=0, ddof=0)
