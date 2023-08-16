@@ -263,9 +263,13 @@ def platform_regist_driver(inData, end_day, **kwargs):
     # print('driver mh perc kpi: {}'.format(avg_perc_earnings_mh))
     std_perc_earnings_mh = regist_df.loc[regist_df.multihoming].perc_inc_rel.std(ddof=0)
     regist_df['perc_inc_reg'] = regist_df.apply(lambda row: np.where(row.prev_regist == False, np.nan, row.prev_regist * row.expected_income), axis=1)
-    avg_perc_earnings_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_inc_reg.to_list(), axis=0) # list with average perceived earnings per platform
-    # print('driver plf perc kpi: {}'.format(avg_perc_earnings_plf))
-    std_perc_earnings_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_inc_reg.to_list(), axis=0, ddof=0)
+    if regist_df.multihoming.all(): # only multihomers
+        avg_perc_earnings_plf = np.ones(inData.platforms.shape[0]) * np.nan
+        std_perc_earnings_plf = np.ones(inData.platforms.shape[0]) * np.nan
+    else:
+        avg_perc_earnings_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_inc_reg.to_list(), axis=0) # list with average perceived earnings per platform
+        # print('driver plf perc kpi: {}'.format(avg_perc_earnings_plf))
+        std_perc_earnings_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_inc_reg.to_list(), axis=0, ddof=0)
     
     regist_df['signal_mh'] = signal_mh(params, avg_perc_earnings_mh, std_perc_earnings_mh)
     regist_df['signal_plf'] = regist_df.apply(lambda _: signal_plf(params, avg_perc_earnings_plf, std_perc_earnings_plf), axis=1)

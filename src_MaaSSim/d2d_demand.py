@@ -543,9 +543,14 @@ def platform_regist_trav(inData, end_day, **kwargs):
         # print('trav mh perc kpi: {}'.format(avg_perc_kpi_mh))
         std_perc_kpi_mh = regist_df.loc[regist_df.multihoming].perc_kpi_rel.std(ddof=0)
         regist_df['perc_kpi_reg'] = regist_df.apply(lambda row: np.where(row.prev_regist == False, np.nan, row.prev_regist * row.expected_kpi), axis=1)
-        avg_perc_kpi_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0) # list with average perceived indicator per platform
-        # print('trav plf avg_perc_kpi: {}'.format(avg_perc_kpi_plf))
-        std_perc_kpi_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0, ddof=0)
+        
+        if regist_df.multihoming.all(): # only multihomers
+            avg_perc_kpi_plf = np.ones(inData.platforms.shape[0]) * np.nan
+            std_perc_kpi_plf = np.ones(inData.platforms.shape[0]) * np.nan
+        else:
+            avg_perc_kpi_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0) # list with average perceived indicator per platform
+            # print('trav plf avg_perc_kpi: {}'.format(avg_perc_kpi_plf))
+            std_perc_kpi_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0, ddof=0)
         regist_df['signal_mh'] = signal_mh(params, avg_perc_kpi_mh, std_perc_kpi_mh)
         regist_df['signal_plf'] = regist_df.apply(lambda _: signal_plf(params, avg_perc_kpi_plf, std_perc_kpi_plf), axis=1)
         regist_df['relevant_signal'] = regist_df.apply(lambda row: row.signal_mh if row.multihoming else row.signal_plf, axis=1)
