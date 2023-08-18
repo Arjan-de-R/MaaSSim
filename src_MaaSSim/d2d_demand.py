@@ -195,7 +195,10 @@ def update_d2d_travellers(*args, **kwargs):
     ret['new_perc_wait'] = ret.apply(lambda row: learning_new_wait(params, row.init_perc_wait, row.corr_xp_wait, row.requests), axis=1)
     ret['new_perc_ivt'] = ret.apply(lambda row: learning_new_kpi(params, row.init_perc_ivt, row.xp_ivt, row.requests, row.gets_offer), axis=1)
     ret['new_perc_fare'] = ret.apply(lambda row: learning_new_kpi(params, row.init_perc_km_fare, row.xp_km_fare, row.requests, row.gets_offer), axis=1)
-    
+    for col in sim.last_res.pax_exp:
+        if col.startswith("time_occ"):
+            ret[col] = sim.last_res.pax_exp[col].to_numpy()
+
     ret['chosen_mode'] = sim.passengers.mode_day.to_numpy()
     ret = ret.set_index('pax')
     ret = ret.drop(columns=['LOSES_PATIENCE'])

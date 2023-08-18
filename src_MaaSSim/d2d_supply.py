@@ -122,6 +122,11 @@ def update_d2d_drivers(*args, **kwargs):
     ret['rejected_reg'] = sim.vehicles.rejected_reg.to_numpy()
     new_perc_inc = learning_drivers(ret, params=params)
     ret['new_perc_inc'] = new_perc_inc.to_numpy()
+    ret['pickup_dist'] = sim.last_res.veh_exp.pickup_dist.to_numpy()
+    ret['repos_dist'] = sim.last_res.veh_exp.repos_dist.to_numpy()
+    for col in sim.last_res.veh_exp.columns:
+        if col.startswith("km occ"):
+            ret[col.replace(" ","_")] = sim.last_res.veh_exp[col].to_numpy()
     cols = list(ret.columns)
     ret = ret[cols]
     ret = ret.set_index('veh')

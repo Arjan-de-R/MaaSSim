@@ -8,7 +8,9 @@ def d2d_summary_day(drivers_summary, travs_summary):
 
     # Demand
     indicators = ['informed', 'registered', 'requests', 'gets_offer', 'accepts_offer', 'init_perc_wait',
-                           'xp_wait', 'corr_xp_wait', 'init_perc_ivt', 'xp_ivt', 'init_perc_km_fare', 'xp_km_fare', 'init_perc_util', 'chosen_mode']
+                           'xp_wait', 'corr_xp_wait', 'init_perc_ivt', 'xp_ivt', 'init_perc_km_fare', 'xp_km_fare', 'relev_perc_util', 'chosen_mode']
+    occ_strings = [s for s in travs_summary.columns if s.startswith("time_occ")]
+    indicators = indicators + occ_strings
     dem_df = travs_summary[indicators].copy()
     for col in dem_df:
         if isinstance(dem_df.head(1)[col].values[0], np.ndarray):
@@ -17,7 +19,9 @@ def d2d_summary_day(drivers_summary, travs_summary):
             dem_df = dem_df.drop(columns=[col])
     
     # Supply
-    indicators = ['informed', 'registered', 'out', 'init_perc_inc', 'exp_inc', 'init_perc_util']
+    indicators = ['informed', 'registered', 'out', 'init_perc_inc', 'exp_inc', 'relev_perc_util', 'pickup_dist', 'repos_dist']
+    occ_strings = [s for s in drivers_summary.columns if s.startswith("km_occ")]
+    indicators = indicators + occ_strings
     sup_df = drivers_summary[indicators].copy()
     for col in sup_df:
         if isinstance(sup_df.head(1)[col].values[0], np.ndarray):

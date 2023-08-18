@@ -189,6 +189,8 @@
     "convergence": {
         "req_steady_days": 5,
         "factor": 0.002,
-        "moving_avg": 5
+        "moving_avg": 5,
+        "abs_util_diff_dem": 0.01,
+        "abs_util_diff_sup": 0.0025
     }
 }
