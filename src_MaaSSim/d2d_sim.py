@@ -87,6 +87,9 @@ def return_scn_params(_params, key, val):
         _params.evol.travellers.inform.beta = val
     if key == 'inf_sup':
         _params.evol.drivers.inform.beta = val
+    if key == 'inf_start_both':
+        _params.evol.travellers.inform.prob_start = val
+        _params.evol.drivers.inform.prob_start = val
     if key == 'inf_start_dem':
         _params.evol.travellers.inform.prob_start = val
     if key == 'inf_start_sup':

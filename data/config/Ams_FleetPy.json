@@ -92,8 +92,6 @@
         "fare": 1.5,
         "min_fare": 0,
         "comm_rate": 0.25,
-        "reg_cap": Infinity,
-        "ptcp_cap": Infinity,
         "max_wait_time": 600,
         "match_obj": "func_key:total_system_time",
         "max_rel_detour": 40
@@ -147,8 +145,7 @@
                 "ASC_car_sd": 0,
                 "ASC_rs_sd": 0,
                 "ASC_pt_sd": 0,
-                "ASC_bike_sd": 0,
-                "gini": 0.35
+                "ASC_bike_sd": 0
             },
             "prob_reg_start": 1
         }
