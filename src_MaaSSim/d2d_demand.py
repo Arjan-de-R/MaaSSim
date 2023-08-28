@@ -257,20 +257,9 @@ def mode_filter(inData, params):
     rs_wait = 0
     rs_ivt = inData.requests.ttrav.dt.total_seconds()
 
-    if np.any(np.array(inData.platforms.max_rel_detour.values) < 0.1): # at least one platform offers solo service
-        rs_km_fare = params.platforms.fare
-        utils['solo'] = util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare)
-    if inData.platforms.max_rel_detour.sum() > 0.1: # at least one platform offers pooling service
-        rs_km_fare = params.platforms.fare * (1 - params.platforms.pool_discount)
-        utils['pool'] = util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare)
-    
-    # determine utility of best ride-hailing product, either solo or pooled
-    if 'solo' in utils and 'pool' in utils:
-        utils['rs'] = utils[['solo','pool']].max(axis=1)
-    elif 'solo' in utils:
-        utils['rs'] = utils['solo']
-    else:
-        utils['rs'] = utils['pool']
+    # The filter is based on the cheapest fare (i.e. the pooling fare), because highest probability under no waiting and detours
+    rs_km_fare = params.platforms.fare * (1 - params.platforms.pool_discount)
+    utils['rs'] = util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare)
 
     probabilities = mode_probs(utils)
     probs_without_rs = probabilities.apply(lambda row: row / (1 - row.rs), axis=1)[['bike','car','pt']]
