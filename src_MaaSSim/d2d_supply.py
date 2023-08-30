@@ -196,7 +196,7 @@ def platform_regist_driver(inData, end_day, **kwargs):
     
     def regist_plf(inData, row):
         '''returns boolean array with each item indicating whether you are registered with that platform after today'''
-        reg_arr = row.prev_regist # if not making a registration decision
+        reg_arr = row.prev_regist.copy() # if not making a registration decision
         if row.decis: # making a decision
             if not np.any(row.prev_regist): # not previously registered with any platform
                 if row.satisfied: # satisfied with at least one platform - want to be registered

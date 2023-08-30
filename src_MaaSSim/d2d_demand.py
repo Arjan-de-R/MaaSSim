@@ -551,7 +551,7 @@ def platform_regist_trav(inData, end_day, **kwargs):
     
     def regist_plf(inData, row):
         '''returns boolean array with each item indicating whether you are registered with that platform after today'''
-        reg_arr = row.prev_regist # if not making a registration decision
+        reg_arr = row.prev_regist.copy() # if not making a registration decision
         if row.decis:
             if (row.prev_regist.sum() == 0) or (row.days_since_reg >= params.evol.travellers.regist.min_days): # either not previously registered or sufficient days registered
                 reg_arr = np.full(len(inData.platforms.index), False) # standard: don't want to be registered with any platform
