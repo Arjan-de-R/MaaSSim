@@ -256,6 +256,7 @@ def mode_filter(inData, params):
     utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt})
     rs_wait = 0
     rs_ivt = inData.requests.ttrav.dt.total_seconds()
+    min_prob = params.evol.travellers.get('min_prob', 0)
 
     # The filter is based on the cheapest fare (i.e. the pooling fare), because highest probability under no waiting and detours
     rs_km_fare = params.platforms.fare * (1 - params.platforms.pool_discount)
@@ -266,7 +267,8 @@ def mode_filter(inData, params):
     cuml = probs_without_rs.cumsum(axis=1)
     draw = cuml.gt(np.random.random(len(passengers)),axis=0) * 1
     probabilities['decis'] = draw.idxmax(axis="columns")
-    probabilities.loc[probabilities.rs > params.evol.travellers.min_prob, "decis"] = 'day-to-day'
+    passengers['mode_without_rs'] = probabilities.decis.copy()
+    probabilities.loc[probabilities.rs > min_prob, "decis"] = 'day-to-day'
     passengers['mode_choice'] = probabilities.decis
     passengers['prob_rs'] = probabilities.rs
     
