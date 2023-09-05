@@ -118,7 +118,7 @@
                 "prob_start": 0.5,
                 "beta": 0.2,
                 "cost_comp": 20,
-                "samp": 0.1,
+                "samp": 0.2,
                 "min_work_exp": 0,
                 "min_days": 5
             },
@@ -160,7 +160,7 @@
             "prob_reg_start": 1,
             "regist": {
                 "prob_start": 1,
-                "samp": 0.1,
+                "samp": 0.2,
                 "min_days": 5
             },
             "kappa_comm": 0.5
@@ -187,10 +187,10 @@
     "sup_mh_share": 0.5,
     "study_name": "competition_trb24",
     "convergence": {
-        "req_steady_days": 5,
+        "req_steady_days": 10,
         "factor": 0.002,
-        "moving_avg": 5,
-        "abs_util_diff_dem": 0.01,
-        "abs_util_diff_sup": 0.0025
+        "moving_avg": 20,
+        "abs_ptcp_diff_dem": 1,
+        "abs_ptcp_diff_sup": 0.025
     }
 }
