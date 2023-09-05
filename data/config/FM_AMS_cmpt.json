@@ -112,7 +112,7 @@
             "inform": {
                 "prob_start": 0.2,
                 "beta": 1,
-                "std_fact": 0.5
+                "std_fact": 1
             },
             "regist": {
                 "prob_start": 0.5,
@@ -134,7 +134,7 @@
                 "prob_start": 0.2,
                 "beta": 4,
                 "start_wait": 0,
-                "std_fact": 0.5
+                "std_fact": 1
             },
             "reject_penalty": 1800,
             "kappa": 0.2,
