@@ -495,22 +495,8 @@ def platform_regist_trav(inData, end_day, **kwargs):
     '''determine which travellers are registered with which platform and what LoS they anticipate'''
     params = kwargs.get('params', None)
     
-    def signal_mh(params, avg_perc_indicator_mh, std_perc_indicator_mh):
-        rand_signal = np.random.normal(avg_perc_indicator_mh, params.evol.travellers.inform.std_fact * std_perc_indicator_mh, size=len(inData.passengers.index))
-        rand_signal[rand_signal < 0] = 0
-        return rand_signal
-
-    def signal_plf(params, avg_perc_indicator_plf, std_perc_indicator_plf):
-        signal_list = []
-        for plf in range(len(avg_perc_indicator_plf)):
-            rand_signal = np.random.normal(avg_perc_indicator_plf[plf], params.evol.travellers.inform.std_fact * std_perc_indicator_plf[plf])
-            if rand_signal < 0:
-                rand_signal = 0
-            signal_list.append(rand_signal)
-        return signal_list
-    
     def new_perc_after_communication_trav(row):
-        # First replace nan signals (when there are no sh/mh travs per plf) by previous expected kpi 
+        # First replace nan signals (when there are no sh/mh travs requesting per plf) by previous expected kpi 
         if row.multihoming:
             if math.isnan(row.relevant_signal):
                 row.relevant_signal = row.expected_kpi[0]
@@ -518,38 +504,64 @@ def platform_regist_trav(inData, end_day, **kwargs):
             nan_mask = np.isnan(row.relevant_signal)
             row.relevant_signal = np.where(nan_mask, row.expected_kpi, row.relevant_signal)
         # Now determine new expected kpi
-        if not row.decis or np.all(row.prev_regist): # not making a decision today or already registered with all platforms
+        if not row.decis: #or np.all(row.prev_regist): # not making a decision today or already registered with all platforms
             new_perc_kpi = row.expected_kpi
-        else:
-            if row.multihoming: # multihoming and not registered with any platform
-                if np.any(~np.isnan(row.expected_kpi)): # if you have a previous expectation
-                    kappa_comm = params.evol.travellers.kappa_comm
-                else:
-                    kappa_comm = 1
-            else:
-                kappa_comm = np.nan_to_num(np.isnan(row.expected_kpi) * ~row.prev_regist) * 1 + np.nan_to_num(params.evol.travellers.kappa_comm * ~np.isnan(row.expected_kpi) * ~row.prev_regist)
+        elif row.multihoming:
+            if np.all(row.requests): # traveller requests a ride
+                new_perc_kpi = row.expected_kpi
+            elif not np.any(~np.isnan(row.expected_kpi)): # multihoming without previous expectation
+                new_perc_kpi = row.relevant_signal * np.ones(len(row.prev_regist))
+            else: # non-requesting multi-homer with previous expectation
+                kappa_comm = params.evol.travellers.kappa_comm
+                new_perc_kpi = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_kpi) * (1 - kappa_comm)
+        else: # single-homer making a regist decision
+            kappa_comm = np.nan_to_num(np.isnan(row.expected_kpi) * ~row.requests) * 1 + np.nan_to_num(params.evol.travellers.kappa_comm * ~np.isnan(row.expected_kpi) * ~row.requests)
             new_perc_kpi = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_kpi) * (1 - kappa_comm)
         return new_perc_kpi
     
     def new_perc_kpi(regist_df):
-        regist_df['perc_kpi_rel'] = regist_df.apply(lambda row: np.nanmean(row.expected_kpi) if row.reg_any else np.nan, axis=1) # relevant perc kpi for learning
-        avg_perc_kpi_mh = regist_df.loc[regist_df.multihoming].perc_kpi_rel.mean()
-        # print('trav mh perc kpi: {}'.format(avg_perc_kpi_mh))
-        std_perc_kpi_mh = regist_df.loc[regist_df.multihoming].perc_kpi_rel.std(ddof=0)
-        regist_df['perc_kpi_reg'] = regist_df.apply(lambda row: np.where(row.prev_regist == False, np.nan, row.prev_regist * row.expected_kpi), axis=1)
-        
-        if regist_df.multihoming.all(): # only multihomers
-            avg_perc_kpi_plf = np.ones(inData.platforms.shape[0]) * np.nan
-            std_perc_kpi_plf = np.ones(inData.platforms.shape[0]) * np.nan
-        else:
-            avg_perc_kpi_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0) # list with average perceived indicator per platform
-            # print('trav plf avg_perc_kpi: {}'.format(avg_perc_kpi_plf))
-            std_perc_kpi_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_kpi_reg.to_list(), axis=0, ddof=0)
-        regist_df['signal_mh'] = signal_mh(params, avg_perc_kpi_mh, std_perc_kpi_mh)
-        regist_df['signal_plf'] = regist_df.apply(lambda _: signal_plf(params, avg_perc_kpi_plf, std_perc_kpi_plf), axis=1)
+        # Signal for multi-homers
+
+        def signals(xp, num_signals_per_agent, num_agents):
+            # Check if the number of draws (num_signals_per_agent) is larger than the number of experiences
+            if num_signals_per_agent >= len(xp): # if so, signals are equal to experience of all agents - everyone talks to everyone
+                mean_signal = np.ones(num_agents) * np.nanmean(xp)
+            else:
+                mean_signal = []
+                # If num_signals_per_agent is smaller, draw without replacement
+                for _ in range(num_agents):
+                    random_indices = np.random.choice(len(xp), size=num_signals_per_agent, replace=False)
+                    drawn_array = xp[random_indices]
+                    signal = np.nanmean(drawn_array)
+                    mean_signal.append(signal)
+                mean_signal = np.array(mean_signal)
+
+            return mean_signal
+
+        num_signals_per_agent = params.evol.travellers.inform.get('num_signals', 1)
+
+        # Signal for multi-homers
+        regist_df['xp_single_val'] = regist_df.apply(lambda row: row.xp_kpi[0], axis=1)
+        xp_kpi_mh = regist_df.loc[regist_df.multihoming].xp_single_val.dropna().to_numpy() if regist_df.multihoming.any() else [np.nan]
+        regist_df['signal_mh'] = signals(xp_kpi_mh, num_signals_per_agent, regist_df.shape[0])
+
+        # Signal for single-homers
+        # regist_df['xp_kpi_plf'] = regist_df.apply(lambda row: np.where(row.requests, 1, np.nan) * row.xp_kpi, axis=1)
+        xp_kpi_plf = np.vstack(regist_df.loc[~regist_df.multihoming].xp_kpi if (~regist_df.multihoming).any() else np.array([np.ones(inData.platforms.shape[0]) * np.nan]))
+        for plf in range(inData.platforms.shape[0]):
+            xp_kpi = xp_kpi_plf[:,plf][~np.isnan(xp_kpi_plf[:,plf])] # experienced kpi's on particular plf
+            if plf == 0:
+                signal_array = signals(xp_kpi, num_signals_per_agent, regist_df.shape[0])
+            else:
+                signal_array = np.column_stack((signal_array, signals(xp_kpi, num_signals_per_agent, regist_df.shape[0])))
+        signal_list = [row for row in signal_array]
+
+        regist_df['signal_plf'] = signal_list
         regist_df['relevant_signal'] = regist_df.apply(lambda row: row.signal_mh if row.multihoming else row.signal_plf, axis=1)
         regist_df['new_perc_kpi'] = regist_df.apply(lambda row: new_perc_after_communication_trav(row), axis=1)
+        
         return regist_df
+    
     
     def regist_plf(inData, row):
         '''returns boolean array with each item indicating whether you are registered with that platform after today'''
@@ -573,7 +585,8 @@ def platform_regist_trav(inData, end_day, **kwargs):
             days = np.nan
         return days
 
-    regist_df = pd.DataFrame(data={'inform': inData.passengers.informed, 'prev_regist': end_day.registered,
+    regist_df = pd.DataFrame(data={'inform': inData.passengers.informed, 'prev_regist': end_day.registered, 'requests': end_day.requests,
+                                   'xp_wait': end_day.corr_xp_wait, 'xp_ivt': end_day.xp_ivt, 'xp_fare': end_day.xp_km_fare, 
                                    'expected_wait': end_day.new_perc_wait, 'expected_ivt': end_day.new_perc_ivt,
                                    'expected_fare': end_day.new_perc_fare, 'multihoming': inData.passengers.multihoming,
                                    'VoT': inData.passengers.VoT, 'ASC_rs': inData.passengers.ASC_rs, 
@@ -586,11 +599,10 @@ def platform_regist_trav(inData, end_day, **kwargs):
 
     ### If a traveller is currently unregistered and considers registration, he seeks information about LoS indicators, which he receives with noise
     ## Multi-homer: interested in multi-homing LoS, i.e. platform-independent indicators, (of reg. travellers) only
-    regist_df['reg_any'] = regist_df.apply(lambda row: row.prev_regist.sum() > 0, axis=1)
-
     kpis = ['wait', 'ivt', 'fare']
     for kpi in kpis:
         df = regist_df.copy()
+        df = df.rename(columns={"xp_{}".format(kpi): "xp_kpi"})
         df = df.rename(columns={"expected_{}".format(kpi): "expected_kpi"})
         df = new_perc_kpi(df)
         regist_df['new_perc_{}'.format(kpi)] = df["new_perc_kpi"].copy()

@@ -180,19 +180,22 @@ def learning_unregist(inData, end_day, **kwargs):
 def platform_regist_driver(inData, end_day, **kwargs):
     "determine probability of registering at platform overnight for all unregistered drivers"
     params = kwargs.get('params', None)
-    
-    def signal_mh(params, avg_perc_earnings_mh, std_perc_earnings_mh):
-        rand_signal = np.random.normal(avg_perc_earnings_mh, params.evol.drivers.inform.std_fact * std_perc_earnings_mh, size=params.nV)
-        # rand_signal = np.where(np.isnan(rand_signal), params.evol.drivers.start_perc_inc_avg_ratio * inData.vehicles.res_wage.mean(), rand_signal) # if no multihomer is registered, take average of res wage
-        return rand_signal
 
-    def signal_plf(params, avg_perc_earnings_plf, std_perc_earnings_plf):
-        signal_list = []
-        for plf in range(len(avg_perc_earnings_plf)):
-            rand_signal = np.random.normal(avg_perc_earnings_plf[plf], params.evol.drivers.inform.std_fact * std_perc_earnings_plf[plf])
-            signal_list.append(rand_signal)
-        # signal_list = [params.evol.drivers.start_perc_inc_avg_ratio * inData.vehicles.res_wage.mean() if math.isnan(x) else x for x in signal_list]
-        return signal_list
+    def signals(xp, num_signals_per_agent, num_agents):
+        # Check if the number of draws (num_signals_per_agent) is larger than the number of experiences
+        if num_signals_per_agent >= len(xp): # if so, signals are equal to experience of all agents - everyone talks to everyone
+            mean_signal = np.ones(num_agents) * np.nanmean(xp)
+        else:
+            mean_signal = []
+            # If num_signals_per_agent is smaller, draw without replacement
+            for _ in range(num_agents):
+                random_indices = np.random.choice(len(xp), size=num_signals_per_agent, replace=False)
+                drawn_array = xp[random_indices]
+                signal = np.nanmean(drawn_array)
+                mean_signal.append(signal)
+            mean_signal = np.array(mean_signal)
+
+        return mean_signal
     
     def regist_plf(inData, row):
         '''returns boolean array with each item indicating whether you are registered with that platform after today'''
@@ -222,7 +225,7 @@ def platform_regist_driver(inData, end_day, **kwargs):
         return days
     
     def new_perc_after_communication_driver(row):
-        # First replace NaN signals by previous expected income
+        # First replace NaN signals (if there are no participating drivers for 1 or more platforms) by previous expected income
         if row.multihoming:
             if math.isnan(row.relevant_signal):
                 row.relevant_signal = row.expected_income[0]
@@ -230,15 +233,18 @@ def platform_regist_driver(inData, end_day, **kwargs):
             nan_mask = np.isnan(row.relevant_signal)
             row.relevant_signal = np.where(nan_mask, row.expected_income, row.relevant_signal)
         # Now determine new expected income
-        if not row.decis or np.all(row.prev_regist): # not making a decision today or already registered with all platforms
+        if not row.decis: #or np.all(~row.out): # not making a decision today or a multi-homer participating
             new_perc_inc = row.expected_income
-        elif row.multihoming and not np.any(~np.isnan(row.expected_income)): # multihoming and no previous expectation
-            new_perc_inc = row.relevant_signal * np.ones(len(row.prev_regist))
-        else:
-            if row.multihoming: # multihoming and you have a previous expectation
+        elif row.multihoming:
+            if np.all(~row.out): # multi-homer participating --> no signal
+                new_perc_inc = row.expected_income
+            elif not np.any(~np.isnan(row.expected_income)): # multihoming without previous expectation
+                new_perc_inc = row.relevant_signal * np.ones(len(row.prev_regist))
+            else: # non-participating multi-homer with previous expectation
                 kappa_comm = params.evol.drivers.kappa_comm
-            else: # singlehoming
-                kappa_comm = np.nan_to_num(np.isnan(row.expected_income) * ~row.prev_regist) * 1 + np.nan_to_num(params.evol.drivers.kappa_comm * ~np.isnan(row.expected_income) * ~row.prev_regist)
+                new_perc_inc = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_income) * (1 - kappa_comm)
+        else: # single-homer making a regist decision
+            kappa_comm = np.nan_to_num(np.isnan(row.expected_income) * row.out) * 1 + np.nan_to_num(params.evol.drivers.kappa_comm * ~np.isnan(row.expected_income) * row.out)
             new_perc_inc = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_income) * (1 - kappa_comm)
         return new_perc_inc
     
@@ -250,8 +256,9 @@ def platform_regist_driver(inData, end_day, **kwargs):
 
     regist_df = pd.DataFrame(data={'inform': inData.vehicles.informed, 'prev_regist': end_day.registered,
                                    'work_exp': inData.vehicles.work_exp,
-                                   'days_since_reg': inData.vehicles.days_since_reg,
-                                   'expected_income': end_day.new_perc_inc,
+                                   'days_since_reg': inData.vehicles.days_since_reg, 'out': end_day.out,
+                                   'xp_income': end_day.exp_inc.copy(),
+                                   'expected_income': end_day.new_perc_inc, 
                                    'prob_ptcp_rejected': prob_ptcp_rejected, 'multihoming': inData.vehicles.multihoming},
                              index=np.arange(1, len(inData.vehicles) + 1))
     regist_df['days_since_reg'] = regist_df['days_since_reg'] + 1
@@ -260,39 +267,37 @@ def platform_regist_driver(inData, end_day, **kwargs):
     # only informed agents can make regist decision
     regist_df.loc[~regist_df.inform, 'decis'] = False
 
-    ### If a job seeker is currently unregistered, he seeks information about platform earnings, which he receives with noise
-    ## Multi-homer: interested in multi-homing earnings (of reg. job seekers) only
-    regist_df['reg_any'] = regist_df.apply(lambda row: row.prev_regist.sum() > 0, axis=1)
-    regist_df['perc_inc_rel'] = regist_df.apply(lambda row: np.nanmean(row.expected_income) if row.reg_any else np.nan, axis=1) # relevant perc inc for learning
-    avg_perc_earnings_mh = regist_df.loc[regist_df.multihoming].perc_inc_rel.mean()
-    # print('driver mh perc kpi: {}'.format(avg_perc_earnings_mh))
-    std_perc_earnings_mh = regist_df.loc[regist_df.multihoming].perc_inc_rel.std(ddof=0)
-    regist_df['perc_inc_reg'] = regist_df.apply(lambda row: np.where(row.prev_regist == False, np.nan, row.prev_regist * row.expected_income), axis=1)
-    if regist_df.multihoming.all(): # only multihomers
-        avg_perc_earnings_plf = np.ones(inData.platforms.shape[0]) * np.nan
-        std_perc_earnings_plf = np.ones(inData.platforms.shape[0]) * np.nan
-    else:
-        avg_perc_earnings_plf = np.nanmean(regist_df.loc[~regist_df.multihoming].perc_inc_reg.to_list(), axis=0) # list with average perceived earnings per platform
-        # print('driver plf perc kpi: {}'.format(avg_perc_earnings_plf))
-        std_perc_earnings_plf = np.nanstd(regist_df.loc[~regist_df.multihoming].perc_inc_reg.to_list(), axis=0, ddof=0)
-    
-    regist_df['signal_mh'] = signal_mh(params, avg_perc_earnings_mh, std_perc_earnings_mh)
-    regist_df['signal_plf'] = regist_df.apply(lambda _: signal_plf(params, avg_perc_earnings_plf, std_perc_earnings_plf), axis=1)
+    num_signals_per_agent = params.evol.drivers.inform.get('num_signals', 1)
+
+    # Signal for multi-homers
+    xp_inc_mh = regist_df.loc[regist_df.multihoming].xp_income.dropna().to_numpy() if regist_df.multihoming.any() else [np.nan]
+    regist_df['signal_mh'] = signals(xp_inc_mh, num_signals_per_agent, regist_df.shape[0])
+
+    # Signal for single-homers
+    regist_df['xp_inc_plf'] = regist_df.apply(lambda row: np.where(~row.out, 1, np.nan) * row.xp_income, axis=1)
+    xp_inc_plf = np.vstack(regist_df.loc[~regist_df.multihoming].xp_inc_plf if (~regist_df.multihoming).any() else np.array([np.ones(inData.platforms.shape[0]) * np.nan]))
+    for plf in range(inData.platforms.shape[0]):
+        xp_inc = xp_inc_plf[:,plf][~np.isnan(xp_inc_plf[:,plf])] # experienced kpi's on particular plf
+        if plf == 0:
+            signal_array = signals(xp_inc, num_signals_per_agent, regist_df.shape[0])
+        else:
+            signal_array = np.column_stack((signal_array, signals(xp_inc, num_signals_per_agent, regist_df.shape[0])))
+    signal_list = [row for row in signal_array]
+    regist_df['signal_plf'] = signal_list
     regist_df['relevant_signal'] = regist_df.apply(lambda row: row.signal_mh if row.multihoming else row.signal_plf, axis=1)
     regist_df['new_perc_inc'] = regist_df.apply(lambda row: new_perc_after_communication_driver(row), axis=1)
     # First: determine probability to participate (when registered) depending on expected earnings
     regist_df['res_wage'] = inData.vehicles.res_wage
-    regist_df['util_ptcp'] = regist_df.apply(lambda row: params.evol.drivers.particip.beta * row.new_perc_inc, axis=1)
-    regist_df['util_no_ptcp'] = regist_df.apply(lambda row: params.evol.drivers.particip.beta * row.res_wage, axis=1)
-    regist_df['prob_d_ptcp'] = regist_df.apply(lambda row: np.exp(row.util_ptcp) / (np.exp(row.util_ptcp) + np.exp(row.util_no_ptcp)), axis=1)
-    regist_df['util_reg_plf'] = regist_df.apply(lambda row: params.evol.drivers.regist.beta * row.new_perc_inc * row.prob_d_ptcp * (1-row.prob_ptcp_rejected), axis=1)
-    
+    regist_df['util_ptcp'] = regist_df.apply(lambda row: params.evol.drivers.particip.beta * (row.new_perc_inc - row.res_wage), axis=1)
+    regist_df['util_no_ptcp'] = 0
+    regist_df['ptcp_surplus_plf'] = regist_df.apply(lambda row: np.log(np.exp(row.util_ptcp) + np.exp(row.util_no_ptcp)) / params.evol.drivers.particip.beta, axis=1)
+    regist_df['util_reg_plf'] = regist_df.apply(lambda row: params.evol.drivers.regist.beta * row.ptcp_surplus_plf * (1-row.prob_ptcp_rejected), axis=1)
     regist_df['prob_plf'] = regist_df.apply(lambda row: np.array([(np.exp(row.util_reg_plf[plf]) / np.exp(row.util_reg_plf).sum()) for plf in inData.platforms.index]), axis=1)
     regist_df['chosen_plf_index'] = regist_df.apply(lambda row: np.random.choice(len(row.prob_plf), p=np.nan_to_num(row.prob_plf)) if (np.nan_to_num(row.prob_plf).sum() != 0) else 0, axis=1)
 
     # Now decide between ridesourcing or other activity
-    regist_df['util_not_reg'] = regist_df.apply(lambda row: params.evol.drivers.regist.beta * (row.res_wage * row.prob_d_ptcp[row.chosen_plf_index] + params.evol.drivers.regist.cost_comp), axis=1)
-    regist_df['prob_regist_util'] = regist_df.apply(lambda row: np.exp(row.util_reg_plf[row.chosen_plf_index]) / (np.exp(row.util_reg_plf[row.chosen_plf_index]) + np.exp(row.util_not_reg)), axis=1)
+    util_not_reg = params.evol.drivers.regist.beta * params.evol.drivers.regist.cost_comp
+    regist_df['prob_regist_util'] = regist_df.apply(lambda row: np.exp(row.util_reg_plf[row.chosen_plf_index]) / (np.exp(row.util_reg_plf[row.chosen_plf_index]) + np.exp(util_not_reg)), axis=1)
     regist_df['satisfied'] = np.random.rand(params.nV) < regist_df.prob_regist_util
 
     regist_df['regist_plf'] = regist_df.apply(lambda row: regist_plf(inData, row), axis=1)
