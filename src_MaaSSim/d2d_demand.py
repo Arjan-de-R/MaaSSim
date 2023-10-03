@@ -632,8 +632,8 @@ def platform_regist_trav(inData, end_day, **kwargs):
     regist_df['expected_reg_plf'] = regist_df.apply(lambda row: row.prob_reg_plf * row.inform, axis=1)
     regist_df['expected_req_plf'] = regist_df.apply(lambda row: row.expected_reg_plf * row.prob_req_plf, axis=1)
     conv_df = dict()
-    conv_df['expected_reg_mh'] = regist_df.loc[regist_df.multihoming].apply(lambda row: row.expected_reg_plf[0], axis=1).sum() if regist_df.multihoming.any() else 0
-    conv_df['expected_req_mh'] = regist_df.loc[regist_df.multihoming].apply(lambda row: row.expected_req_plf[0], axis=1).sum() if regist_df.multihoming.any() else 0
+    conv_df['expected_reg_mh'] = regist_df.loc[regist_df.multihoming].apply(lambda row: row.expected_reg_plf.mean(), axis=1).sum() if regist_df.multihoming.any() else 0
+    conv_df['expected_req_mh'] = regist_df.loc[regist_df.multihoming].apply(lambda row: row.expected_req_plf.mean(), axis=1).sum() if regist_df.multihoming.any() else 0
     conv_df['expected_reg_sh_0'] = regist_df.loc[~regist_df.multihoming].apply(lambda row: row.expected_reg_plf[0], axis=1).sum() if (~regist_df.multihoming).any() else 0
     conv_df['expected_req_sh_0'] = regist_df.loc[~regist_df.multihoming].apply(lambda row: row.expected_req_plf[0], axis=1).sum() if (~regist_df.multihoming).any() else 0
     if inData.platforms.shape[0] > 1:
