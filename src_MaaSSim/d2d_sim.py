@@ -76,10 +76,8 @@ def D2D_stop_crit(*args, **kwargs):
 
 def return_scn_params(_params, key, val):
     '''updates parameter files, including scenario-specific parameters'''
-    if key in ['comm_rate', 'fare', 'base_fare', 'reg_cap', 'ptcp_cap']:
+    if key in ['comm_rate', 'fare', 'base_fare', 'reg_cap', 'ptcp_cap', 'service_types']:
         _params.platforms[key] = val
-    if key in ['comm_rate', 'fare', 'base_fare', 'reg_cap', 'ptcp_cap']:
-            _params.platforms[key] = val
     if key == 'gini':
         _params.evol.drivers[key] = val
         _params.evol.travellers.mode_pref[key] = val
