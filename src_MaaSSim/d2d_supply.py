@@ -292,8 +292,8 @@ def platform_regist_driver(inData, end_day, **kwargs):
     regist_df['util_no_ptcp'] = 0
     regist_df['ptcp_surplus_plf'] = regist_df.apply(lambda row: np.log(np.exp(row.util_ptcp) + np.exp(row.util_no_ptcp)) / params.evol.drivers.particip.beta, axis=1)
     regist_df['util_reg_plf'] = regist_df.apply(lambda row: params.evol.drivers.regist.beta * row.ptcp_surplus_plf * (1-row.prob_ptcp_rejected), axis=1)
-    regist_df['prob_plf'] = regist_df.apply(lambda row: np.array([(np.exp(row.util_reg_plf[plf]) / np.exp(row.util_reg_plf).sum()) for plf in inData.platforms.index]), axis=1)
-    regist_df['chosen_plf_index'] = regist_df.apply(lambda row: np.random.choice(len(row.prob_plf), p=np.nan_to_num(row.prob_plf)) if (np.nan_to_num(row.prob_plf).sum() != 0) else 0, axis=1)
+    regist_df['prob_reg_plf'] = regist_df.apply(lambda row: np.array([(np.exp(row.util_reg_plf[plf]) / np.exp(row.util_reg_plf).sum()) for plf in inData.platforms.index]), axis=1)
+    regist_df['chosen_plf_index'] = regist_df.apply(lambda row: np.random.choice(len(row.prob_reg_plf), p=np.nan_to_num(row.prob_reg_plf)) if (np.nan_to_num(row.prob_reg_plf).sum() != 0) else 0, axis=1)
 
     # Now decide between ridesourcing or other activity
     util_not_reg = params.evol.drivers.regist.beta * params.evol.drivers.regist.cost_comp
@@ -303,19 +303,33 @@ def platform_regist_driver(inData, end_day, **kwargs):
     regist_df['regist_plf'] = regist_df.apply(lambda row: regist_plf(inData, row), axis=1)
     regist_df['reg_outcome'] = regist_df.apply(lambda row: np.where(row.regist_plf & ~row.prev_regist, 1, np.where(row.regist_plf & row.prev_regist, 0, np.where(~row.regist_plf & ~row.prev_regist, 0, -1))), axis=1) # 1: newly registered with plf, 0: same status as before, -1 deregistered with plf
     
+    regist_df['rejected'] = False
     if params.platforms.reg_cap: # TODO: regist cap per platform
-        max_entrants = params.platforms.reg_cap - still_regist.sum()
-        regist_df['lot_ticket'] = np.random.rand(params.nV) * regist_df.regist_decision
-        regist_df['lot_rank'] = regist_df.lot_ticket.rank(method='first', ascending=False)
-        regist_df['entry_rejected'] = regist_df.lot_rank > max_entrants
-        regist_df['result'] = regist_df.regist_decision * (~regist_df.entry_rejected)
-        regist_df['rejected'] = regist_df[['regist_decision', 'entry_rejected']].all(axis=1)
-    else:
-        regist_df['rejected'] = False
-
+        pass
+        # regist_df['lot_ticket'] = np.random.rand(params.nV) * regist_df.regist_decision
+        # regist_df['lot_rank'] = regist_df.lot_ticket.rank(method='first', ascending=False)
+        # regist_df['entry_rejected'] = regist_df.lot_rank > max_entrants
+        # regist_df['result'] = regist_df.regist_decision * (~regist_df.entry_rejected)
+        # regist_df['rejected'] = regist_df[['regist_decision', 'entry_rejected']].all(axis=1)
+        
     regist_df['work_exp'] = regist_df.apply(lambda row: return_days(row.reg_outcome, row.work_exp), axis=1)
     regist_df['days_since_reg'] = regist_df.apply(lambda row: return_days(row.reg_outcome, row.days_since_reg), axis=1)
     
+    # Determining convergence indicators (i.e. determine expected participation for both platforms)
+    regist_df['prob_reg_plf'] = regist_df.apply(lambda row: row.prob_reg_plf if not row.multihoming else np.ones(inData.platforms.shape[0]), axis=1) # probability of registering with one platform over the other
+    regist_df['prob_regist_market_plf'] = regist_df.apply(lambda row: np.exp(row.util_reg_plf) / (np.exp(row.util_reg_plf) + np.exp(util_not_reg)), axis=1) # prob of registering with ridesourcing market given only a specific platform
+    regist_df['prob_ptcp_plf'] = regist_df.apply(lambda row: np.exp(row.util_ptcp) / (np.exp(row.util_ptcp) + np.exp(row.util_no_ptcp)), axis=1) # probability of participating when registered with a platform
+    regist_df['expected_reg_plf'] = regist_df.apply(lambda row: row.prob_reg_plf * row.prob_regist_market_plf * row.inform, axis=1)
+    regist_df['expected_ptcp_plf'] = regist_df.apply(lambda row: row.expected_reg_plf * row.prob_ptcp_plf, axis=1)
+    conv_df = dict()
+    conv_df['expected_reg_mh'] = regist_df.loc[regist_df.multihoming].apply(lambda row: row.expected_reg_plf[0], axis=1).sum() if regist_df.multihoming.any() else 0
+    conv_df['expected_ptcp_mh'] = regist_df.loc[regist_df.multihoming].apply(lambda row: row.expected_ptcp_plf[0], axis=1).sum() if regist_df.multihoming.any() else 0
+    conv_df['expected_reg_sh_0'] = regist_df.loc[~regist_df.multihoming].apply(lambda row: row.expected_reg_plf[0], axis=1).sum() if (~regist_df.multihoming).any() else 0
+    conv_df['expected_ptcp_sh_0'] = regist_df.loc[~regist_df.multihoming].apply(lambda row: row.expected_ptcp_plf[0], axis=1).sum() if (~regist_df.multihoming).any() else 0
+    if inData.platforms.shape[0] > 1:
+        conv_df['expected_reg_sh_1'] = regist_df.loc[~regist_df.multihoming].apply(lambda row: row.expected_reg_plf[1], axis=1).sum() if (~regist_df.multihoming).any() else 0
+        conv_df['expected_ptcp_sh_1'] = regist_df.loc[~regist_df.multihoming].apply(lambda row: row.expected_ptcp_plf[1], axis=1).sum() if (~regist_df.multihoming).any() else 0
+
     # return inData
     inData.vehicles.registered = regist_df.regist_plf
     inData.vehicles.work_exp = regist_df.work_exp
@@ -323,7 +337,7 @@ def platform_regist_driver(inData, end_day, **kwargs):
     inData.vehicles.expected_income = regist_df.new_perc_inc
     inData.vehicles.rejected_reg = regist_df.rejected
 
-    return inData.vehicles
+    return inData.vehicles, conv_df
 
 
 def D2D_driver_out(*args, **kwargs):

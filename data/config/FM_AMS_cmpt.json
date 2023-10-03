@@ -112,11 +112,11 @@
             "inform": {
                 "prob_start": 0.2,
                 "beta": 1,
-                "std_fact": 1
+                "num_signals": 1
             },
             "regist": {
                 "prob_start": 0.5,
-                "beta": 0.2,
+                "beta": 1,
                 "cost_comp": 20,
                 "samp": 0.2,
                 "min_work_exp": 0,
@@ -134,7 +134,7 @@
                 "prob_start": 0.2,
                 "beta": 4,
                 "start_wait": 0,
-                "std_fact": 1
+                "num_signals": 1
             },
             "reject_penalty": 1800,
             "kappa": 0.2,
@@ -183,13 +183,13 @@
     "drivers": {
         "fuel_costs": 0.25
     },
-    "dem_mh_share": 0.5,
-    "sup_mh_share": 0.5,
+    "dem_mh_share": 0,
+    "sup_mh_share": 0,
     "study_name": "competition_trb24",
     "convergence": {
         "req_steady_days": 10,
         "factor": 0.002,
-        "moving_avg": 20,
+        "moving_avg": 10,
         "abs_ptcp_diff_dem": 1,
         "abs_ptcp_diff_sup": 0.025
     }

@@ -546,7 +546,6 @@ def platform_regist_trav(inData, end_day, **kwargs):
         regist_df['signal_mh'] = signals(xp_kpi_mh, num_signals_per_agent, regist_df.shape[0])
 
         # Signal for single-homers
-        # regist_df['xp_kpi_plf'] = regist_df.apply(lambda row: np.where(row.requests, 1, np.nan) * row.xp_kpi, axis=1)
         xp_kpi_plf = np.vstack(regist_df.loc[~regist_df.multihoming].xp_kpi if (~regist_df.multihoming).any() else np.array([np.ones(inData.platforms.shape[0]) * np.nan]))
         for plf in range(inData.platforms.shape[0]):
             xp_kpi = xp_kpi_plf[:,plf][~np.isnan(xp_kpi_plf[:,plf])] # experienced kpi's on particular plf
@@ -590,7 +589,8 @@ def platform_regist_trav(inData, end_day, **kwargs):
                                    'expected_wait': end_day.new_perc_wait, 'expected_ivt': end_day.new_perc_ivt,
                                    'expected_fare': end_day.new_perc_fare, 'multihoming': inData.passengers.multihoming,
                                    'VoT': inData.passengers.VoT, 'ASC_rs': inData.passengers.ASC_rs, 
-                                   'ASC_pool': inData.passengers.ASC_pool, 'days_since_reg': inData.passengers.days_since_reg},
+                                   'ASC_pool': inData.passengers.ASC_pool, 'days_since_reg': inData.passengers.days_since_reg, 
+                                   'U_bike': inData.passengers.U_bike, 'U_car': inData.passengers.U_car, 'U_pt': inData.passengers.U_pt},
                              index=inData.passengers.index)
     regist_df['days_since_reg'] = regist_df['days_since_reg'] + 1
     regist_df['decis'] = pd.Series(np.random.rand(len(inData.passengers.index)) <= params.evol.travellers.regist.samp, index=np.arange(0, len(inData.passengers.index)))  # Sample of travellers making (de)registration decision
@@ -608,8 +608,8 @@ def platform_regist_trav(inData, end_day, **kwargs):
         regist_df['new_perc_{}'.format(kpi)] = df["new_perc_kpi"].copy()
     
     regist_df['util_reg_plf'] = regist_df.rename(columns={"new_perc_wait": "perc_wait", "new_perc_ivt": "perc_ivt", "new_perc_fare": "perc_fare"}).apply(lambda row: util_plfs(inData, params, row), axis=1)
-    regist_df['prob_plf'] = regist_df.apply(lambda row: np.array([(np.exp(row.util_reg_plf[plf]) / np.exp(row.util_reg_plf).sum()) for plf in inData.platforms.index]), axis=1)
-    regist_df['chosen_plf_index'] = regist_df.apply(lambda row: np.random.choice(len(row.prob_plf), p=np.nan_to_num(row.prob_plf)) if (np.nan_to_num(row.prob_plf).sum() != 0) else 0, axis=1)
+    regist_df['prob_reg_plf'] = regist_df.apply(lambda row: np.array([(np.exp(row.util_reg_plf[plf]) / np.exp(row.util_reg_plf).sum()) for plf in inData.platforms.index]), axis=1)
+    regist_df['chosen_plf_index'] = regist_df.apply(lambda row: np.random.choice(len(row.prob_reg_plf), p=np.nan_to_num(row.prob_reg_plf)) if (np.nan_to_num(row.prob_reg_plf).sum() != 0) else 0, axis=1)
 
     # # Now decide between ridesourcing or other activity
     regist_df['util_not_reg'] = -math.inf # no reason not sign up with at least one platform
@@ -626,4 +626,18 @@ def platform_regist_trav(inData, end_day, **kwargs):
     inData.passengers.expected_ivt = regist_df.new_perc_ivt
     inData.passengers.expected_km_fare = regist_df.new_perc_fare
 
-    return inData
+    # Determining convergence indicators (i.e. determine expected participation for both platforms)
+    regist_df['prob_reg_plf'] = regist_df.apply(lambda row: row.prob_reg_plf if not row.multihoming else np.ones(inData.platforms.shape[0]), axis=1) # probability of registering with one platform over the other
+    regist_df['prob_req_plf'] = regist_df.apply(lambda row: np.exp(row.util_reg_plf) / (np.exp(row.util_reg_plf) + np.exp(row.U_bike) + np.exp(row.U_car) + np.exp(row.U_pt)), axis=1) # probability of requesting when registered with a platform
+    regist_df['expected_reg_plf'] = regist_df.apply(lambda row: row.prob_reg_plf * row.inform, axis=1)
+    regist_df['expected_req_plf'] = regist_df.apply(lambda row: row.expected_reg_plf * row.prob_req_plf, axis=1)
+    conv_df = dict()
+    conv_df['expected_reg_mh'] = regist_df.loc[regist_df.multihoming].apply(lambda row: row.expected_reg_plf[0], axis=1).sum() if regist_df.multihoming.any() else 0
+    conv_df['expected_req_mh'] = regist_df.loc[regist_df.multihoming].apply(lambda row: row.expected_req_plf[0], axis=1).sum() if regist_df.multihoming.any() else 0
+    conv_df['expected_reg_sh_0'] = regist_df.loc[~regist_df.multihoming].apply(lambda row: row.expected_reg_plf[0], axis=1).sum() if (~regist_df.multihoming).any() else 0
+    conv_df['expected_req_sh_0'] = regist_df.loc[~regist_df.multihoming].apply(lambda row: row.expected_req_plf[0], axis=1).sum() if (~regist_df.multihoming).any() else 0
+    if inData.platforms.shape[0] > 1:
+        conv_df['expected_reg_sh_1'] = regist_df.loc[~regist_df.multihoming].apply(lambda row: row.expected_reg_plf[1], axis=1).sum() if (~regist_df.multihoming).any() else 0
+        conv_df['expected_req_sh_1'] = regist_df.loc[~regist_df.multihoming].apply(lambda row: row.expected_req_plf[1], axis=1).sum() if (~regist_df.multihoming).any() else 0
+
+    return inData, conv_df
