@@ -516,7 +516,7 @@ def platform_regist_trav(inData, end_day, **kwargs):
                 kappa_comm = params.evol.travellers.kappa_comm_not_reg
                 new_perc_kpi = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_kpi) * (1 - kappa_comm)
         else: # single-homer making a regist decision
-            kappa_dep_on_reg = np.where(row.prev_regist, params.evol.drivers.kappa_comm_reg, params.evol.drivers.kappa_comm_not_reg)
+            kappa_dep_on_reg = np.where(row.prev_regist, params.evol.travellers.kappa_comm_reg, params.evol.travellers.kappa_comm_not_reg)
             kappa_comm = np.nan_to_num(np.isnan(row.expected_kpi)) * 1 + np.nan_to_num(kappa_dep_on_reg * ~np.isnan(row.expected_kpi))
             new_perc_kpi = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_kpi) * (1 - kappa_comm)
         return new_perc_kpi
