@@ -504,58 +504,56 @@ def platform_regist_trav(inData, end_day, **kwargs):
             nan_mask = np.isnan(row.relevant_signal)
             row.relevant_signal = np.where(nan_mask, row.expected_kpi, row.relevant_signal)
         # Now determine new expected kpi
-        if not row.decis: #or np.all(row.prev_regist): # not making a decision today or already registered with all platforms
+        if not row.decis:
             new_perc_kpi = row.expected_kpi
         elif row.multihoming:
-            if np.all(row.requests): # traveller requests a ride
-                new_perc_kpi = row.expected_kpi
-            elif not np.any(~np.isnan(row.expected_kpi)): # multihoming without previous expectation
+            if not np.any(~np.isnan(row.expected_kpi)): # multihoming without previous expectation
                 new_perc_kpi = row.relevant_signal * np.ones(len(row.prev_regist))
-            else: # non-requesting multi-homer with previous expectation
-                kappa_comm = params.evol.travellers.kappa_comm
+            elif row.prev_regist.any(): # registered multi-homer with previous expectation
+                kappa_comm = params.evol.travellers.kappa_comm_reg
+                new_perc_kpi = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_kpi) * (1 - kappa_comm)
+            else:
+                kappa_comm = params.evol.travellers.kappa_comm_not_reg
                 new_perc_kpi = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_kpi) * (1 - kappa_comm)
         else: # single-homer making a regist decision
-            kappa_comm = np.nan_to_num(np.isnan(row.expected_kpi) * ~row.requests) * 1 + np.nan_to_num(params.evol.travellers.kappa_comm * ~np.isnan(row.expected_kpi) * ~row.requests)
+            kappa_dep_on_reg = np.where(row.prev_regist, params.evol.drivers.kappa_comm_reg, params.evol.drivers.kappa_comm_not_reg)
+            kappa_comm = np.nan_to_num(np.isnan(row.expected_kpi)) * 1 + np.nan_to_num(kappa_dep_on_reg * ~np.isnan(row.expected_kpi))
             new_perc_kpi = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_kpi) * (1 - kappa_comm)
         return new_perc_kpi
     
     def new_perc_kpi(regist_df):
         # Signal for multi-homers
 
-        def signals(xp, num_signals_per_agent, num_agents):
-            # Check if the number of draws (num_signals_per_agent) is larger than the number of experiences
+        def signal(own_kpi, req_bool, xp, num_signals_per_agent):
+            # Information from yourself is first removed from list of experiences
+            if req_bool and (own_kpi in xp): 
+                index_to_remove = np.where(xp == own_kpi)[0][0]  
+                xp = np.delete(xp, index_to_remove)
+            # Now, check if the number of draws (num_signals_per_agent) is larger than the number of experiences
             if num_signals_per_agent >= len(xp): # if so, signals are equal to experience of all agents - everyone talks to everyone
-                mean_signal = np.ones(num_agents) * np.nanmean(xp)
+                signal = np.nanmean(xp)
             else:
-                mean_signal = []
                 # If num_signals_per_agent is smaller, draw without replacement
-                for _ in range(num_agents):
-                    random_indices = np.random.choice(len(xp), size=num_signals_per_agent, replace=False)
-                    drawn_array = xp[random_indices]
-                    signal = np.nanmean(drawn_array)
-                    mean_signal.append(signal)
-                mean_signal = np.array(mean_signal)
-
-            return mean_signal
+                random_signals = np.random.choice(xp, size=num_signals_per_agent, replace=False)
+                signal = np.nanmean(random_signals)
+            return signal
 
         num_signals_per_agent = params.evol.travellers.inform.get('num_signals', 1)
 
         # Signal for multi-homers
         regist_df['xp_single_val'] = regist_df.apply(lambda row: row.xp_kpi[0], axis=1)
         xp_kpi_mh = regist_df.loc[regist_df.multihoming].xp_single_val.dropna().to_numpy() if regist_df.multihoming.any() else [np.nan]
-        regist_df['signal_mh'] = signals(xp_kpi_mh, num_signals_per_agent, regist_df.shape[0])
+        regist_df['signal_mh'] = regist_df.apply(lambda row: signal(row.xp_single_val, row.requests.any(), xp_kpi_mh, num_signals_per_agent), axis=1)
 
         # Signal for single-homers
         xp_kpi_plf = np.vstack(regist_df.loc[~regist_df.multihoming].xp_kpi if (~regist_df.multihoming).any() else np.array([np.ones(inData.platforms.shape[0]) * np.nan]))
         for plf in range(inData.platforms.shape[0]):
             xp_kpi = xp_kpi_plf[:,plf][~np.isnan(xp_kpi_plf[:,plf])] # experienced kpi's on particular plf
-            if plf == 0:
-                signal_array = signals(xp_kpi, num_signals_per_agent, regist_df.shape[0])
-            else:
-                signal_array = np.column_stack((signal_array, signals(xp_kpi, num_signals_per_agent, regist_df.shape[0])))
-        signal_list = [row for row in signal_array]
-
-        regist_df['signal_plf'] = signal_list
+            regist_df['signal_{}'.format(plf)] = regist_df.apply(lambda row: signal(row.xp_kpi[plf], row.requests[plf], xp_kpi, num_signals_per_agent), axis=1)
+        if inData.platforms.shape[0] == 1:
+            regist_df['signal_plf'] = regist_df['signal_0']
+        else:
+            regist_df['signal_plf'] = regist_df.apply(lambda row: [row.signal_0, row.signal_1], axis=1)
         regist_df['relevant_signal'] = regist_df.apply(lambda row: row.signal_mh if row.multihoming else row.signal_plf, axis=1)
         regist_df['new_perc_kpi'] = regist_df.apply(lambda row: new_perc_after_communication_trav(row), axis=1)
         
