@@ -181,21 +181,18 @@ def platform_regist_driver(inData, end_day, **kwargs):
     "determine probability of registering at platform overnight for all unregistered drivers"
     params = kwargs.get('params', None)
 
-    def signals(xp, num_signals_per_agent, num_agents):
-        # Check if the number of draws (num_signals_per_agent) is larger than the number of experiences
+    def signal(own_inc, ptcp_bool, xp, num_signals_per_agent):
+        # information from yourself is first removed from the list of experiences
+        if ptcp_bool and (own_inc in xp): 
+            index_to_remove = np.where(xp == own_inc)[0][0]  
+            xp = np.delete(xp, index_to_remove)
+        # Now, check if the number of draws (num_signals_per_agent) is larger than the number of experiences
         if num_signals_per_agent >= len(xp): # if so, signals are equal to experience of all agents - everyone talks to everyone
-            mean_signal = np.ones(num_agents) * np.nanmean(xp)
-        else:
-            mean_signal = []
-            # If num_signals_per_agent is smaller, draw without replacement
-            for _ in range(num_agents):
-                random_indices = np.random.choice(len(xp), size=num_signals_per_agent, replace=False)
-                drawn_array = xp[random_indices]
-                signal = np.nanmean(drawn_array)
-                mean_signal.append(signal)
-            mean_signal = np.array(mean_signal)
-
-        return mean_signal
+            signal = np.nanmean(xp)
+        else: # If num_signals_per_agent is smaller, draw without replacement
+            random_signals = np.random.choice(xp, size=num_signals_per_agent, replace=False)
+            signal = np.nanmean(random_signals)
+        return signal
     
     def regist_plf(inData, row):
         '''returns boolean array with each item indicating whether you are registered with that platform after today'''
@@ -233,18 +230,20 @@ def platform_regist_driver(inData, end_day, **kwargs):
             nan_mask = np.isnan(row.relevant_signal)
             row.relevant_signal = np.where(nan_mask, row.expected_income, row.relevant_signal)
         # Now determine new expected income
-        if not row.decis: #or np.all(~row.out): # not making a decision today or a multi-homer participating
+        if not row.decis: # not making a decision today
             new_perc_inc = row.expected_income
         elif row.multihoming:
-            if np.all(~row.out): # multi-homer participating --> no signal
-                new_perc_inc = row.expected_income
-            elif not np.any(~np.isnan(row.expected_income)): # multihoming without previous expectation
+            if not np.any(~np.isnan(row.expected_income)): # multihoming without previous expectation
                 new_perc_inc = row.relevant_signal * np.ones(len(row.prev_regist))
-            else: # non-participating multi-homer with previous expectation
-                kappa_comm = params.evol.drivers.kappa_comm
+            elif row.prev_regist.any(): # registered multi-homer with previous expectation
+                kappa_comm = params.evol.drivers.kappa_comm_reg
+                new_perc_inc = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_income) * (1 - kappa_comm)
+            else:
+                kappa_comm = params.evol.drivers.kappa_comm_not_reg
                 new_perc_inc = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_income) * (1 - kappa_comm)
         else: # single-homer making a regist decision
-            kappa_comm = np.nan_to_num(np.isnan(row.expected_income) * row.out) * 1 + np.nan_to_num(params.evol.drivers.kappa_comm * ~np.isnan(row.expected_income) * row.out)
+            kappa_dep_on_reg = np.where(row.prev_regist, params.evol.drivers.kappa_comm_reg, params.evol.drivers.kappa_comm_not_reg)
+            kappa_comm = np.nan_to_num(np.isnan(row.expected_income)) * 1 + np.nan_to_num(kappa_dep_on_reg * ~np.isnan(row.expected_income))
             new_perc_inc = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_income) * (1 - kappa_comm)
         return new_perc_inc
     
@@ -271,19 +270,18 @@ def platform_regist_driver(inData, end_day, **kwargs):
 
     # Signal for multi-homers
     xp_inc_mh = regist_df.loc[regist_df.multihoming].xp_income.dropna().to_numpy() if regist_df.multihoming.any() else [np.nan]
-    regist_df['signal_mh'] = signals(xp_inc_mh, num_signals_per_agent, regist_df.shape[0])
+    regist_df['signal_mh'] = regist_df.apply(lambda row: signal(row.xp_income, (~row.out).any(), xp_inc_mh, num_signals_per_agent), axis=1)
 
     # Signal for single-homers
     regist_df['xp_inc_plf'] = regist_df.apply(lambda row: np.where(~row.out, 1, np.nan) * row.xp_income, axis=1)
     xp_inc_plf = np.vstack(regist_df.loc[~regist_df.multihoming].xp_inc_plf if (~regist_df.multihoming).any() else np.array([np.ones(inData.platforms.shape[0]) * np.nan]))
     for plf in range(inData.platforms.shape[0]):
-        xp_inc = xp_inc_plf[:,plf][~np.isnan(xp_inc_plf[:,plf])] # experienced kpi's on particular plf
-        if plf == 0:
-            signal_array = signals(xp_inc, num_signals_per_agent, regist_df.shape[0])
-        else:
-            signal_array = np.column_stack((signal_array, signals(xp_inc, num_signals_per_agent, regist_df.shape[0])))
-    signal_list = [row for row in signal_array]
-    regist_df['signal_plf'] = signal_list
+        xp_inc = xp_inc_plf[:,plf][~np.isnan(xp_inc_plf[:,plf])]
+        regist_df['signal_{}'.format(plf)] = regist_df.apply(lambda row: signal(row.xp_income, ~row.out[plf], xp_inc, num_signals_per_agent), axis=1)
+    if inData.platforms.shape[0] == 1:
+        regist_df['signal_plf'] = regist_df['signal_0']
+    else:
+        regist_df['signal_plf'] = regist_df.apply(lambda row: [row.signal_0, row.signal_1], axis=1)
     regist_df['relevant_signal'] = regist_df.apply(lambda row: row.signal_mh if row.multihoming else row.signal_plf, axis=1)
     regist_df['new_perc_inc'] = regist_df.apply(lambda row: new_perc_after_communication_driver(row), axis=1)
     # First: determine probability to participate (when registered) depending on expected earnings
