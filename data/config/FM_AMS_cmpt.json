@@ -112,13 +112,13 @@
             "inform": {
                 "prob_start": 0.2,
                 "beta": 1,
-                "num_signals": 3
+                "num_signals": 5
             },
             "regist": {
                 "prob_start": 0.5,
                 "beta": 1,
                 "cost_comp": 20,
-                "samp": 0.125,
+                "samp": 0.15,
                 "min_work_exp": 0,
                 "min_days": 5
             },
@@ -127,7 +127,7 @@
                 "probabilistic": true
             },
             "kappa_comm_reg": 0.2,
-            "kappa_comm_not_reg": 0.5,
+            "kappa_comm_not_reg": 0.3333333,
             "start_perc_inc_avg_ratio": 1
         },
         "travellers": {
@@ -135,7 +135,7 @@
                 "prob_start": 0.2,
                 "beta": 4,
                 "start_wait": 0,
-                "num_signals": 3
+                "num_signals": 5
             },
             "reject_penalty": 1800,
             "kappa": 0.2,
@@ -161,11 +161,12 @@
             "prob_reg_start": 1,
             "regist": {
                 "prob_start": 1,
-                "samp": 0.125,
-                "min_days": 5
+                "samp": 0.15,
+                "min_days": 5,
+                "util_multiplier": 4
             },
             "kappa_comm_reg": 0.2,
-            "kappa_comm_not_reg": 0.5
+            "kappa_comm_not_reg": 0.3333333
         }
     },
     "alt_modes": {
@@ -189,9 +190,10 @@
     "sup_mh_share": 0,
     "study_name": "competition_trb24",
     "convergence": {
-        "req_steady_days": 5,
+        "req_steady_days": 10,
         "factor": 0.002,
-        "moving_avg": 20,
+        "first_moving_avg": 25,
+        "second_moving_avg": 50,
         "abs_ptcp_diff_dem": 2,
         "abs_ptcp_diff_sup": 0.05
     }
