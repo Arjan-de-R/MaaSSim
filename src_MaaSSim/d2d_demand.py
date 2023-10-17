@@ -605,7 +605,7 @@ def platform_regist_trav(inData, end_day, **kwargs):
         df = new_perc_kpi(df)
         regist_df['new_perc_{}'.format(kpi)] = df["new_perc_kpi"].copy()
     
-    regist_df['util_reg_plf'] = regist_df.rename(columns={"new_perc_wait": "perc_wait", "new_perc_ivt": "perc_ivt", "new_perc_fare": "perc_fare"}).apply(lambda row: util_plfs(inData, params, row), axis=1)
+    regist_df['util_reg_plf'] = regist_df.rename(columns={"new_perc_wait": "perc_wait", "new_perc_ivt": "perc_ivt", "new_perc_fare": "perc_fare"}).apply(lambda row: util_plfs(inData, params, row) * params.evol.travellers.regist.get('util_multiplier', 1), axis=1)
     regist_df['prob_reg_plf'] = regist_df.apply(lambda row: np.array([(np.exp(row.util_reg_plf[plf]) / np.exp(row.util_reg_plf).sum()) for plf in inData.platforms.index]), axis=1)
     regist_df['chosen_plf_index'] = regist_df.apply(lambda row: np.random.choice(len(row.prob_reg_plf), p=np.nan_to_num(row.prob_reg_plf)) if (np.nan_to_num(row.prob_reg_plf).sum() != 0) else 0, axis=1)
 
