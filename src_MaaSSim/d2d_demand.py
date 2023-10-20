@@ -505,8 +505,11 @@ def platform_regist_trav(inData, end_day, **kwargs):
             if math.isnan(row.relevant_signal):
                 row.relevant_signal = row.expected_kpi[0]
         else:
-            if kpi_ivt: # replace pooling detour signal by individuals' in-vehicle time signal
-                row.relevant_signal = ([(x+1)* row.ttrav_sp.total_seconds() for x in row.relevant_signal])
+            if kpi_ivt:
+                if (inData.platforms.shape[0] > 1): # replace pooling detour signal by individuals' in-vehicle time signal
+                    row.relevant_signal = ([(x+1)* row.ttrav_sp.total_seconds() for x in row.relevant_signal])
+                else:
+                    row.relevant_signal = (row.relevant_signal + 1) * row.ttrav_sp.total_seconds()
             nan_mask = np.isnan(row.relevant_signal)
             row.relevant_signal = np.where(nan_mask, row.expected_kpi, row.relevant_signal)
         # Now determine new expected kpi
