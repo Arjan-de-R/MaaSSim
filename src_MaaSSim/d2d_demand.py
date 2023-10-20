@@ -199,6 +199,8 @@ def update_d2d_travellers(*args, **kwargs):
         if col.startswith("time_occ"):
             ret[col] = sim.last_res.pax_exp[col].to_numpy()
 
+    ret['xp_detour'] = np.round(sim.last_res.pax_exp.detour.to_numpy(), 3)
+    ret['xp_detour'] = ret.apply(lambda row: row.xp_detour * zero_to_nan(np.ones(len(row.accepts_offer)) * row.requests), axis=1)
     ret['chosen_mode'] = sim.passengers.mode_day.to_numpy()
     ret = ret.set_index('pax')
     ret = ret.drop(columns=['LOSES_PATIENCE'])
@@ -495,12 +497,16 @@ def platform_regist_trav(inData, end_day, **kwargs):
     '''determine which travellers are registered with which platform and what LoS they anticipate'''
     params = kwargs.get('params', None)
     
-    def new_perc_after_communication_trav(row):
+    def new_perc_after_communication_trav(row, kpi_ivt):
         # First replace nan signals (when there are no sh/mh travs requesting per plf) by previous expected kpi 
         if row.multihoming:
+            if kpi_ivt: # and replace pooling detour signal by individuals' in-vehicle time signal
+                row.relevant_signal = (row.relevant_signal + 1) * row.ttrav_sp.total_seconds()
             if math.isnan(row.relevant_signal):
                 row.relevant_signal = row.expected_kpi[0]
         else:
+            if kpi_ivt: # replace pooling detour signal by individuals' in-vehicle time signal
+                row.relevant_signal = ([(x+1)* row.ttrav_sp.total_seconds() for x in row.relevant_signal])
             nan_mask = np.isnan(row.relevant_signal)
             row.relevant_signal = np.where(nan_mask, row.expected_kpi, row.relevant_signal)
         # Now determine new expected kpi
@@ -521,7 +527,7 @@ def platform_regist_trav(inData, end_day, **kwargs):
             new_perc_kpi = row.relevant_signal * kappa_comm + np.nan_to_num(row.expected_kpi) * (1 - kappa_comm)
         return new_perc_kpi
     
-    def new_perc_kpi(regist_df):
+    def new_perc_kpi(regist_df, kpi_ivt):
         # Signal for multi-homers
 
         def signal(own_kpi, req_bool, xp, num_signals_per_agent):
@@ -541,21 +547,27 @@ def platform_regist_trav(inData, end_day, **kwargs):
         num_signals_per_agent = params.evol.travellers.inform.get('num_signals', 1)
 
         # Signal for multi-homers
-        regist_df['xp_single_val'] = regist_df.apply(lambda row: row.xp_kpi[0], axis=1)
+        regist_df['xp_single_val'] = regist_df.apply(lambda row: row.xp_kpi[0], axis=1) if not kpi_ivt else regist_df.apply(lambda row: row.xp_detour[0], axis=1)
         xp_kpi_mh = regist_df.loc[regist_df.multihoming].xp_single_val.dropna().to_numpy() if regist_df.multihoming.any() else [np.nan]
         regist_df['signal_mh'] = regist_df.apply(lambda row: signal(row.xp_single_val, row.requests.any(), xp_kpi_mh, num_signals_per_agent), axis=1)
 
         # Signal for single-homers
-        xp_kpi_plf = np.vstack(regist_df.loc[~regist_df.multihoming].xp_kpi if (~regist_df.multihoming).any() else np.array([np.ones(inData.platforms.shape[0]) * np.nan]))
+        if (~regist_df.multihoming).any() and not kpi_ivt:
+            xp_kpi_plf = regist_df.loc[~regist_df.multihoming].xp_kpi 
+        elif (~regist_df.multihoming).any() and kpi_ivt: 
+            xp_kpi_plf = regist_df.loc[~regist_df.multihoming].xp_detour
+        else:
+            xp_kpi_plf = np.array([np.ones(inData.platforms.shape[0]) * np.nan])
+        xp_kpi_plf = np.vstack(xp_kpi_plf)
         for plf in range(inData.platforms.shape[0]):
             xp_kpi = xp_kpi_plf[:,plf][~np.isnan(xp_kpi_plf[:,plf])] # experienced kpi's on particular plf
-            regist_df['signal_{}'.format(plf)] = regist_df.apply(lambda row: signal(row.xp_kpi[plf], row.requests[plf], xp_kpi, num_signals_per_agent), axis=1)
+            regist_df['signal_{}'.format(plf)] = regist_df.apply(lambda row: signal(row.xp_kpi[plf] if not kpi_ivt else row.xp_detour[plf], row.requests[plf], xp_kpi, num_signals_per_agent), axis=1)
         if inData.platforms.shape[0] == 1:
             regist_df['signal_plf'] = regist_df['signal_0']
         else:
             regist_df['signal_plf'] = regist_df.apply(lambda row: [row.signal_0, row.signal_1], axis=1)
         regist_df['relevant_signal'] = regist_df.apply(lambda row: row.signal_mh if row.multihoming else row.signal_plf, axis=1)
-        regist_df['new_perc_kpi'] = regist_df.apply(lambda row: new_perc_after_communication_trav(row), axis=1)
+        regist_df['new_perc_kpi'] = regist_df.apply(lambda row: new_perc_after_communication_trav(row, kpi_ivt), axis=1)
         
         return regist_df
     
@@ -583,11 +595,11 @@ def platform_regist_trav(inData, end_day, **kwargs):
         return days
 
     regist_df = pd.DataFrame(data={'inform': inData.passengers.informed, 'prev_regist': end_day.registered, 'requests': end_day.requests,
-                                   'xp_wait': end_day.corr_xp_wait, 'xp_ivt': end_day.xp_ivt, 'xp_fare': end_day.xp_km_fare, 
+                                   'xp_wait': end_day.corr_xp_wait, 'xp_ivt': end_day.xp_ivt, 'xp_fare': end_day.xp_km_fare, 'xp_detour': end_day.xp_detour,
                                    'expected_wait': end_day.new_perc_wait, 'expected_ivt': end_day.new_perc_ivt,
                                    'expected_fare': end_day.new_perc_fare, 'multihoming': inData.passengers.multihoming,
                                    'VoT': inData.passengers.VoT, 'ASC_rs': inData.passengers.ASC_rs, 
-                                   'ASC_pool': inData.passengers.ASC_pool, 'days_since_reg': inData.passengers.days_since_reg, 
+                                   'ASC_pool': inData.passengers.ASC_pool, 'days_since_reg': inData.passengers.days_since_reg, 'ttrav_sp': inData.requests.ttrav,
                                    'U_bike': inData.passengers.U_bike, 'U_car': inData.passengers.U_car, 'U_pt': inData.passengers.U_pt},
                              index=inData.passengers.index)
     regist_df['days_since_reg'] = regist_df['days_since_reg'] + 1
@@ -602,7 +614,8 @@ def platform_regist_trav(inData, end_day, **kwargs):
         df = regist_df.copy()
         df = df.rename(columns={"xp_{}".format(kpi): "xp_kpi"})
         df = df.rename(columns={"expected_{}".format(kpi): "expected_kpi"})
-        df = new_perc_kpi(df)
+        kpi_ivt = True if kpi == 'ivt' else False
+        df = new_perc_kpi(df, kpi_ivt)
         regist_df['new_perc_{}'.format(kpi)] = df["new_perc_kpi"].copy()
     
     regist_df['util_reg_plf'] = regist_df.rename(columns={"new_perc_wait": "perc_wait", "new_perc_ivt": "perc_ivt", "new_perc_fare": "perc_fare"}).apply(lambda row: (np.array(util_plfs(inData, params, row)) * params.evol.travellers.regist.get('util_multiplier', 1)).tolist(), axis=1)
