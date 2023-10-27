@@ -258,11 +258,12 @@ def mode_filter(inData, params):
     utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt})
     rs_wait = 0
     rs_ivt = inData.requests.ttrav.dt.total_seconds()
+    rs_dist = inData.requests.dist
     min_prob = params.evol.travellers.get('min_prob', 0)
 
     # The filter is based on the cheapest fare (i.e. the pooling fare), because highest probability under no waiting and detours
     rs_km_fare = params.platforms.fare * (1 - params.platforms.pool_discount)
-    utils['rs'] = util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare)
+    utils['rs'] = util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare, rs_dist)
 
     probabilities = mode_probs(utils)
     probs_without_rs = probabilities.apply(lambda row: row / (1 - row.rs), axis=1)[['bike','car','pt']]
@@ -301,7 +302,7 @@ def mode_preday(inData, params):
 
     df = inData.passengers.copy()
     df[['wait', 'ivt', 'fare']] = df.apply(lambda row: perc_rs_indicators(row), axis=1, result_type='expand')
-    df['U_rs'] = util_rs(inData, params, df.wait, df.ivt, df.fare)
+    df['U_rs'] = util_rs(inData, params, df.wait, df.ivt, df.fare, inData.requests.dist)
     utils = pd.DataFrame({'bike': passengers.U_bike, 'car': passengers.U_car, 'pt': passengers.U_pt, 'rs': df.U_rs})
 
     probabilities = mode_probs(utils)
@@ -339,8 +340,8 @@ def util_alt_modes(inData, params):
     if props.car.diff_parking:
         requests['dest_center'] = requests.apply(lambda x: inData.nodes.center.loc[x.destination], axis=1)
         requests.loc[requests.dest_center, 'car_park_cost'] = props.car.park_cost_center
-    car_cost = props.car.km_cost * car_ivt * (params.speeds.ride / 1000) + requests.car_park_cost
-    bike_tt = requests.ttrav.dt.total_seconds() * (params.speeds.ride / params.speeds.bike)
+    car_cost = props.car.km_cost * (requests.dist / 1000) + requests.car_park_cost
+    bike_tt = requests.ttrav_bike.dt.total_seconds()
 
     # Utilities
     U_bike = beta_bike_time * bike_tt + ASC_bike
@@ -377,18 +378,18 @@ def mode_probs(utils):
     return probabilities
 
 
-def util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare, trav_vot=False, trav_ASC=False):
+def util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare, rs_dist, trav_vot=False, trav_ASC=False):
     '''determine utility of ridesourcing, either aggregated (if no trav_vot is provided) or for an individual traveller'''
     passengers = inData.passengers
     prefs = params.evol.travellers.mode_pref
     
     if not trav_vot: # determine utility for all passengers
-        rs_fare = np.ones(len(inData.passengers)) * params.platforms.base_fare + rs_km_fare * rs_ivt * (params.speeds.ride / 1000)
+        rs_fare = np.ones(len(inData.passengers)) * params.platforms.base_fare + rs_km_fare * rs_dist / 1000
         rs_fare[rs_fare < params.platforms.min_fare] += params.platforms.min_fare # min fare for solo ride
         beta_ivt = passengers.VoT * prefs.beta_cost / 3600
         ASC_rs = passengers.ASC_rs
     else:  # only for an individual traveller
-        rs_fare = params.platforms.base_fare + rs_km_fare * rs_ivt * (params.speeds.ride / 1000)
+        rs_fare = params.platforms.base_fare + rs_km_fare * rs_dist / 1000
         rs_fare = max(rs_fare, params.platforms.min_fare)
         beta_ivt = trav_vot * prefs.beta_cost / 3600
         ASC_rs = trav_ASC
@@ -405,7 +406,7 @@ def util_plfs(inData, params, row):
             ASC_rs = row.ASC_rs
         else:
             ASC_rs = row.ASC_pool
-        util_plf = util_plf + [util_rs(inData, params, row.perc_wait[plf], row.perc_ivt[plf], row.perc_fare[plf], trav_vot=row.VoT, trav_ASC=ASC_rs)]
+        util_plf = util_plf + [util_rs(inData, params, row.perc_wait[plf], row.perc_ivt[plf], row.perc_fare[plf], row.dist, trav_vot=row.VoT, trav_ASC=ASC_rs)]
     return util_plf
 
 
@@ -482,6 +483,7 @@ def sample_from_database(inData, params):
     inData.requests = inData.requests.sample(params.nP, replace=False, random_state=1)
     inData.requests.treq = pd.to_datetime(inData.requests.treq)
     inData.requests.ttrav = pd.to_timedelta(inData.requests.ttrav)
+    inData.requests.ttrav_bike = pd.to_timedelta(inData.requests.ttrav_bike)
     inData.requests = inData.requests.sort_values(by=['treq']).reset_index(drop=True)
     inData.requests.index.name = 'pax_id'
     inData.passengers = pd.DataFrame(index=inData.requests.index, columns=inData.passengers.columns)
@@ -601,7 +603,7 @@ def platform_regist_trav(inData, end_day, **kwargs):
                                    'xp_wait': end_day.corr_xp_wait, 'xp_ivt': end_day.xp_ivt, 'xp_fare': end_day.xp_km_fare, 'xp_detour': end_day.xp_detour,
                                    'expected_wait': end_day.new_perc_wait, 'expected_ivt': end_day.new_perc_ivt,
                                    'expected_fare': end_day.new_perc_fare, 'multihoming': inData.passengers.multihoming,
-                                   'VoT': inData.passengers.VoT, 'ASC_rs': inData.passengers.ASC_rs, 
+                                   'VoT': inData.passengers.VoT, 'dist': inData.requests.dist, 'ASC_rs': inData.passengers.ASC_rs, 
                                    'ASC_pool': inData.passengers.ASC_pool, 'days_since_reg': inData.passengers.days_since_reg, 'ttrav_sp': inData.requests.ttrav,
                                    'U_bike': inData.passengers.U_bike, 'U_car': inData.passengers.U_car, 'U_pt': inData.passengers.U_pt},
                              index=inData.passengers.index)
