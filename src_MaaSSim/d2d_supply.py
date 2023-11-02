@@ -117,13 +117,13 @@ def update_d2d_drivers(*args, **kwargs):
     ret['registered'] = sim.vehicles.registered.to_numpy()
     ret['out'] = sim.last_res.veh_exp.OUT.to_numpy()
     ret['init_perc_inc'] = sim.vehicles.expected_income.to_numpy()
-    ret['exp_inc'] = sim.last_res.veh_exp.NET_INCOME.to_numpy()
+    ret['exp_inc'] = sim.last_res.veh_exp.NET_INCOME.to_numpy() if 'NET_INCOME' in sim.last_res.veh_exp else np.nan
     ret['forced_out'] = sim.last_res.veh_exp.FORCED_OUT.to_numpy()
     ret['rejected_reg'] = sim.vehicles.rejected_reg.to_numpy()
     new_perc_inc = learning_drivers(ret, params=params)
     ret['new_perc_inc'] = new_perc_inc.to_numpy()
-    ret['pickup_dist'] = sim.last_res.veh_exp.pickup_dist.to_numpy()
-    ret['repos_dist'] = sim.last_res.veh_exp.repos_dist.to_numpy()
+    ret['pickup_dist'] = sim.last_res.veh_exp.pickup_dist.to_numpy() if 'pickup_dist' in sim.last_res.veh_exp else np.nan
+    ret['repos_dist'] = sim.last_res.veh_exp.repos_dist.to_numpy() if 'repos_dist' in sim.last_res.veh_exp else np.nan
     for col in sim.last_res.veh_exp.columns:
         if col.startswith("km occ"):
             ret[col.replace(" ","_")] = sim.last_res.veh_exp[col].to_numpy()
