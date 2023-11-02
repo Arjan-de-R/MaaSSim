@@ -1,17 +1,20 @@
 import pandas as pd
 from dotmap import DotMap
 import numpy as np
+import random
+import os
+import pickle
 
-
-def d2d_summary_day(drivers_summary, travs_summary):
+def d2d_summary_day(inData, drivers_summary, travs_summary):
     "add stats of last day to d2d dataframe and prepare for saving to csv"
 
     # Demand
-    indicators = ['informed', 'registered', 'requests', 'gets_offer', 'accepts_offer', 'init_perc_wait',
-                           'xp_wait', 'corr_xp_wait', 'init_perc_ivt', 'xp_ivt', 'init_perc_km_fare', 'xp_km_fare', 'chosen_mode']
+    indicators_wd = ['requests', 'gets_offer', 'accepts_offer', 'xp_wait', 'corr_xp_wait', 'xp_ivt', 'xp_km_fare', 'chosen_mode']
+    indicators_d2d = ['informed', 'registered', 'expected_wait', 'expected_ivt', 'expected_km_fare', 'days_since_reg']
     occ_strings = [s for s in travs_summary.columns if s.startswith("time_occ")]
-    indicators = indicators + occ_strings
-    dem_df = travs_summary[indicators].copy()
+    indicators_wd = indicators_wd + occ_strings
+
+    dem_df = pd.concat([travs_summary[indicators_wd].copy(), inData.passengers[indicators_d2d].copy()], axis=1)
     for col in dem_df:
         if isinstance(dem_df.head(1)[col].values[0], np.ndarray):
             new_col_list = ['{}_{}'.format(col, plf_id) for plf_id in range(len(dem_df.head(1)[col].values[0]))]
@@ -19,10 +22,11 @@ def d2d_summary_day(drivers_summary, travs_summary):
             dem_df = dem_df.drop(columns=[col])
     
     # Supply
-    indicators = ['informed', 'registered', 'out', 'init_perc_inc', 'exp_inc', 'pickup_dist', 'repos_dist']
+    indicators_wd = ['out', 'exp_inc', 'pickup_dist', 'repos_dist']
+    indicators_d2d = ['informed', 'registered', 'expected_income','days_since_reg','work_exp']
     occ_strings = [s for s in drivers_summary.columns if s.startswith("km_occ")]
-    indicators = indicators + occ_strings
-    sup_df = drivers_summary[indicators].copy()
+    indicators_wd = indicators_wd + occ_strings
+    sup_df = pd.concat([drivers_summary[indicators_wd].copy(), inData.vehicles[indicators_d2d].copy()], axis=1)
     for col in sup_df:
         if isinstance(sup_df.head(1)[col].values[0], np.ndarray):
             new_col_list = ['{}_{}'.format(col, plf_id) for plf_id in range(len(sup_df.head(1)[col].values[0]))]
@@ -110,3 +114,56 @@ def return_scn_params(_params, key, val):
         _params[key] = val
 
     return _params
+
+
+def determine_convergence(inData, d2d_conv, params, scn_name, day):
+    if d2d_conv.shape[0] >= (params.convergence.get('first_moving_avg', 20) + params.convergence.get('second_moving_avg', 20) + params.convergence.get('req_steady_days', 10) + 1): # first day that convergence is possible
+        if params.convergence.get('abs_ptcp_diff_dem', False) and params.convergence.get('abs_ptcp_diff_sup', False):
+            rel_diff_ma_df = d2d_conv.rolling(params.convergence.get('first_moving_avg', 20)).mean().rolling(params.convergence.get('second_moving_avg', 20)).mean().diff().tail(params.convergence.get('req_steady_days', 10))
+            rel_diff_ma_df['dem_mh_conv'] = rel_diff_ma_df.ptcp_dem_mh.abs() < params.convergence.abs_ptcp_diff_dem
+            rel_diff_ma_df['dem_sh_0_conv'] = rel_diff_ma_df.ptcp_dem_sh_0.abs() < params.convergence.abs_ptcp_diff_dem
+            rel_diff_ma_df['sup_mh_conv'] = rel_diff_ma_df.ptcp_sup_mh.abs() < params.convergence.abs_ptcp_diff_sup
+            rel_diff_ma_df['sup_sh_0_conv'] = rel_diff_ma_df.ptcp_sup_sh_0.abs() < params.convergence.abs_ptcp_diff_sup
+            if inData.platforms.shape[0] > 1:
+                rel_diff_ma_df['dem_sh_1_conv'] = rel_diff_ma_df.ptcp_dem_sh_1.abs() < params.convergence.abs_ptcp_diff_dem
+                rel_diff_ma_df['sup_sh_1_conv'] = rel_diff_ma_df.ptcp_sup_sh_1.abs() < params.convergence.abs_ptcp_diff_sup
+                conv_per_indicator = rel_diff_ma_df[['dem_mh_conv','dem_sh_0_conv','dem_sh_1_conv','sup_mh_conv','sup_sh_0_conv','sup_sh_1_conv']].all()
+            else:
+                conv_per_indicator = rel_diff_ma_df[['dem_mh_conv','dem_sh_0_conv','sup_mh_conv','sup_sh_0_conv']].all()
+        else:
+            conv_factor = params.convergence.get('factor', 0.01)
+            rel_diff_ma_df = d2d_conv.rolling(params.convergence.moving_avg).mean().tail(params.convergence.req_steady_days + 1).pct_change().tail(params.convergence.req_steady_days)
+            conv_per_indicator = (rel_diff_ma_df.abs() < conv_factor).all()
+        if conv_per_indicator.all():
+            print('Scenario {} - All indicators have converged at end of day {}, day-to-day simulation is terminated.'.format(scn_name, day))
+            converged = True
+        else:
+            print('Scenario {} - Not all indicators have converged at end of day {}, next day is initialised.'.format(scn_name, day))
+            converged = False
+    else:
+        print('Scenario {} - Initialisation period, simulation can not yet converge at end of day {}, next day is initialised.'.format(scn_name, day))
+        converged = False
+        
+    return converged
+
+
+def save_random_states(result_path):
+    # Record and store the random state
+    random_state = random.getstate()
+    with open(os.path.join(result_path,"random_state.pkl"), "wb") as file:
+        pickle.dump(random_state, file)
+    with open(os.path.join(result_path,"np_random_state.bin"), 'wb') as f:
+        pickle.dump(np.random.get_state(), f)
+
+    return 0
+
+
+def set_random_states(result_path):
+    # Load and set the state from a file using pickle
+    with open(os.path.join(result_path,"random_state.pkl"), "rb") as file:
+        random_state = pickle.load(file)
+    random.setstate(random_state)
+    with open(os.path.join(result_path,"np_random_state.bin"), 'rb') as f:
+        np.random.set_state(pickle.load(f))
+
+    return 0
