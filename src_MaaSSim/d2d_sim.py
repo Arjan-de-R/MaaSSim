@@ -32,6 +32,8 @@ def d2d_summary_day(inData, drivers_summary, travs_summary):
             new_col_list = ['{}_{}'.format(col, plf_id) for plf_id in range(len(sup_df.head(1)[col].values[0]))]
             sup_df[new_col_list] = np.stack(sup_df[col].values)
             sup_df = sup_df.drop(columns=[col])
+    dem_df.index.name = 'pax'
+    sup_df.index.name = 'veh'
 
     return dem_df, sup_df
 
