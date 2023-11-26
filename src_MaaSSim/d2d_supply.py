@@ -267,6 +267,7 @@ def platform_regist_driver(inData, end_day, **kwargs):
     regist_df.loc[~regist_df.inform, 'decis'] = False
 
     num_signals_per_agent = params.evol.drivers.inform.get('num_signals', 1)
+    regist_plf_util_multiplier = params.evol.drivers.regist.get('util_multiplier', 1)
 
     # Signal for multi-homers
     xp_inc_mh = regist_df.loc[regist_df.multihoming].xp_income.dropna().to_numpy() if regist_df.multihoming.any() else [np.nan]
@@ -289,13 +290,14 @@ def platform_regist_driver(inData, end_day, **kwargs):
     regist_df['util_ptcp'] = regist_df.apply(lambda row: params.evol.drivers.particip.beta * (row.new_perc_inc - row.res_wage), axis=1)
     regist_df['util_no_ptcp'] = 0
     regist_df['ptcp_surplus_plf'] = regist_df.apply(lambda row: np.log(np.exp(row.util_ptcp) + np.exp(row.util_no_ptcp)) / params.evol.drivers.particip.beta, axis=1)
-    regist_df['util_reg_plf'] = regist_df.apply(lambda row: params.evol.drivers.regist.beta * row.ptcp_surplus_plf * (1-row.prob_ptcp_rejected), axis=1)
+    regist_df['util_reg_plf'] = regist_df.apply(lambda row: regist_plf_util_multiplier * params.evol.drivers.regist.beta * row.ptcp_surplus_plf * (1-row.prob_ptcp_rejected), axis=1)
     regist_df['prob_reg_plf'] = regist_df.apply(lambda row: np.array([(np.exp(row.util_reg_plf[plf]) / np.exp(row.util_reg_plf).sum()) for plf in inData.platforms.index]), axis=1)
     regist_df['chosen_plf_index'] = regist_df.apply(lambda row: np.random.choice(len(row.prob_reg_plf), p=np.nan_to_num(row.prob_reg_plf)) if (np.nan_to_num(row.prob_reg_plf).sum() != 0) else 0, axis=1)
 
     # Now decide between ridesourcing or other activity
     util_not_reg = params.evol.drivers.regist.beta * params.evol.drivers.regist.cost_comp
-    regist_df['prob_regist_util'] = regist_df.apply(lambda row: np.exp(row.util_reg_plf[row.chosen_plf_index]) / (np.exp(row.util_reg_plf[row.chosen_plf_index]) + np.exp(util_not_reg)), axis=1)
+    regist_df['util_reg_market_plf'] = regist_df.apply(lambda row: params.evol.drivers.regist.beta * row.ptcp_surplus_plf * (1-row.prob_ptcp_rejected), axis=1)
+    regist_df['prob_regist_util'] = regist_df.apply(lambda row: np.exp(row.util_reg_market_plf[row.chosen_plf_index]) / (np.exp(row.util_reg_market_plf[row.chosen_plf_index]) + np.exp(util_not_reg)), axis=1)
     regist_df['satisfied'] = np.random.rand(params.nV) < regist_df.prob_regist_util
 
     regist_df['regist_plf'] = regist_df.apply(lambda row: regist_plf(inData, row), axis=1)
