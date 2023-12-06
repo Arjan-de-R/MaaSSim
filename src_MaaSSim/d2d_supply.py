@@ -151,32 +151,6 @@ def wom_driver(inData, **kwargs):
     return res_inf
 
 
-def learning_unregist(inData, end_day, **kwargs):
-    "determine new perceived income of informed, yet unregistered drivers, based on signal with noise"
-    params = kwargs.get('params', None)
-    exp_reg_drivers = end_day[end_day.registered]
-    average_xp_income = exp_reg_drivers.exp_inc.mean()
-    std_xp_income = exp_reg_drivers.exp_inc.std()
-
-    cond_new_inf = inData.vehicles.informed & ~inData.vehicles.registered & end_day.new_perc_inc.isna()
-    cond_prev_inf = inData.vehicles.informed & ~inData.vehicles.registered & ~end_day.new_perc_inc.isna()
-    df = pd.DataFrame(data={'expected_income': end_day.new_perc_inc, 'cond_new_inf': cond_new_inf,
-                            'cond_prev_inf': cond_prev_inf}, index=np.arange(1, params.nV + 1))
-
-    if (~end_day.out).any(axis=0):  # at least a single participating driver
-        if (~end_day.out).sum() == 1:
-            std_xp_income = exp_reg_drivers.exp_inc.std(ddof=0)
-        df['signal'] = np.random.normal(average_xp_income, params.evol.drivers.inform.std_fact * std_xp_income, len(inData.vehicles))
-        df['perc_inc'] = end_day.new_perc_inc * (1 - params.evol.drivers.kappa) + df.signal * params.evol.drivers.kappa
-    else:
-        df['signal'] = np.ones(len(inData.vehicles)) * end_day.new_perc_inc.mean()
-        df['perc_inc'] = end_day.new_perc_inc
-    df['expected_income'] = df['expected_income'].where(~df.cond_new_inf, df.signal)
-    df['expected_income'] = df['expected_income'].where(~df.cond_prev_inf, df['perc_inc'])
-
-    return df.expected_income
-
-
 def platform_regist_driver(inData, end_day, **kwargs):
     "determine probability of registering at platform overnight for all unregistered drivers"
     params = kwargs.get('params', None)
@@ -221,14 +195,19 @@ def platform_regist_driver(inData, end_day, **kwargs):
             days = np.nan
         return days
     
-    def new_perc_after_communication_driver(row):
+    def new_perc_after_communication_driver(row, mean_perc_inc):
         # First replace NaN signals (if there are no participating drivers for 1 or more platforms) by previous expected income
+        # But if the driver is newly informed, he does not have a previous expectation. In that case, we take the mean expected income
         if row.multihoming:
-            if math.isnan(row.relevant_signal):
+            if math.isnan(row.relevant_signal) and not math.isnan(row.expected_income[0]): # no signal but a previous expectation
                 row.relevant_signal = row.expected_income[0]
+            elif math.isnan(row.relevant_signal) and math.isnan(row.expected_income[0]): # no signal and no previous expectation - take mean expected income
+                row.relevant_signal = mean_perc_inc[0]
         else:
             nan_mask = np.isnan(row.relevant_signal)
-            row.relevant_signal = np.where(nan_mask, row.expected_income, row.relevant_signal)
+            nan_mask_no_expectation = np.isnan(row.expected_income)
+            alt_signal = np.where(nan_mask_no_expectation, mean_perc_inc, row.expected_income)
+            row.relevant_signal = np.where(nan_mask, alt_signal, row.relevant_signal)
         # Now determine new expected income
         if not row.decis: # not making a decision today
             new_perc_inc = row.expected_income
@@ -284,7 +263,8 @@ def platform_regist_driver(inData, end_day, **kwargs):
     else:
         regist_df['signal_plf'] = regist_df.apply(lambda row: [row.signal_0, row.signal_1], axis=1)
     regist_df['relevant_signal'] = regist_df.apply(lambda row: row.signal_mh if row.multihoming else row.signal_plf, axis=1)
-    regist_df['new_perc_inc'] = regist_df.apply(lambda row: new_perc_after_communication_driver(row), axis=1)
+    mean_perc_inc = np.nanmean(np.vstack(regist_df.expected_income), axis=0)
+    regist_df['new_perc_inc'] = regist_df.apply(lambda row: new_perc_after_communication_driver(row, mean_perc_inc), axis=1)
     # First: determine participation surplus depending on expected earnings
     regist_df['res_wage'] = inData.vehicles.res_wage
     regist_df['util_ptcp'] = regist_df.apply(lambda row: params.evol.drivers.particip.beta * (row.new_perc_inc - row.res_wage), axis=1)
@@ -356,29 +336,3 @@ def update_work_exp(inData, end_day):
     df['work_exp'] = df.apply(lambda x: x.work_exp + 1 if (~x.out).sum() > 0 else x.work_exp, axis=1)
 
     return df
-
-
-def learning_unregist(inData, end_day, **kwargs):
-    "determine new perceived platform earnings of newly informed, yet unregistered drivers, based on signal with noise"
-    params = kwargs.get('params', None)
-    exp_reg_drivers = end_day[end_day.registered]
-    average_xp_income = exp_reg_drivers.exp_inc.mean()
-    std_xp_income = exp_reg_drivers.exp_inc.std()
-
-    cond_new_inf = inData.vehicles.informed & ~inData.vehicles.registered & end_day.new_perc_inc.isna()
-    cond_prev_inf = inData.vehicles.informed & ~inData.vehicles.registered & ~end_day.new_perc_inc.isna()
-    df = pd.DataFrame(data={'expected_income': end_day.new_perc_inc, 'cond_new_inf': cond_new_inf,
-                            'cond_prev_inf': cond_prev_inf}, index=np.arange(1, params.nV + 1))
-
-    if (~end_day.out).any(axis=0):  # at least a single participating driver
-        if (~end_day.out).sum() == 1:
-            std_xp_income = exp_reg_drivers.exp_inc.std(ddof=0)
-        df['signal'] = np.random.normal(average_xp_income, params.evol.drivers.inform.std_fact * std_xp_income, len(inData.vehicles))
-        df['perc_inc'] = end_day.new_perc_inc * (1 - params.evol.drivers.kappa) + df.signal * params.evol.drivers.kappa
-    else:
-        df['signal'] = np.ones(len(inData.vehicles)) * end_day.new_perc_inc.mean()
-        df['perc_inc'] = end_day.new_perc_inc
-    df['expected_income'] = df['expected_income'].where(~df.cond_new_inf, df.signal)
-    df['expected_income'] = df['expected_income'].where(~df.cond_prev_inf, df['perc_inc'])
-
-    return df.expected_income

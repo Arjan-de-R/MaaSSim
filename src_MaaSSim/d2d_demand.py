@@ -499,13 +499,16 @@ def platform_regist_trav(inData, end_day, **kwargs):
     '''determine which travellers are registered with which platform and what LoS they anticipate'''
     params = kwargs.get('params', None)
     
-    def new_perc_after_communication_trav(row, kpi_ivt):
+    def new_perc_after_communication_trav(row, kpi_ivt, mean_perc_kpi):
         # First replace nan signals (when there are no sh/mh travs requesting per plf) by previous expected kpi 
+        # But if the traveller is newly informed, he does not have a previous expectation. In that case, we take the mean expected kpi
         if row.multihoming:
             if kpi_ivt: # and replace pooling detour signal by individuals' in-vehicle time signal
                 row.relevant_signal = (row.relevant_signal + 1) * row.ttrav_sp.total_seconds()
-            if math.isnan(row.relevant_signal):
+            if math.isnan(row.relevant_signal) and not math.isnan(row.expected_kpi[0]): # no signal but a previous expectation
                 row.relevant_signal = row.expected_kpi[0]
+            elif math.isnan(row.relevant_signal) and math.isnan(row.expected_kpi[0]): # no signal and no previous expectation - take mean expected kpi
+                row.relevant_signal = mean_perc_kpi[0]
         else:
             if kpi_ivt:
                 if (inData.platforms.shape[0] > 1): # replace pooling detour signal by individuals' in-vehicle time signal
@@ -513,7 +516,9 @@ def platform_regist_trav(inData, end_day, **kwargs):
                 else:
                     row.relevant_signal = (row.relevant_signal + 1) * row.ttrav_sp.total_seconds()
             nan_mask = np.isnan(row.relevant_signal)
-            row.relevant_signal = np.where(nan_mask, row.expected_kpi, row.relevant_signal)
+            nan_mask_no_expectation = np.isnan(row.expected_kpi)
+            alt_signal = np.where(nan_mask_no_expectation, mean_perc_kpi, row.expected_kpi)
+            row.relevant_signal = np.where(nan_mask, alt_signal, row.relevant_signal)
         # Now determine new expected kpi
         if not row.decis:
             new_perc_kpi = row.expected_kpi
@@ -572,7 +577,8 @@ def platform_regist_trav(inData, end_day, **kwargs):
         else:
             regist_df['signal_plf'] = regist_df.apply(lambda row: [row.signal_0, row.signal_1], axis=1)
         regist_df['relevant_signal'] = regist_df.apply(lambda row: row.signal_mh if row.multihoming else row.signal_plf, axis=1)
-        regist_df['new_perc_kpi'] = regist_df.apply(lambda row: new_perc_after_communication_trav(row, kpi_ivt), axis=1)
+        mean_perc_kpi = np.nanmean(np.vstack(regist_df.expected_kpi), axis=0)
+        regist_df['new_perc_kpi'] = regist_df.apply(lambda row: new_perc_after_communication_trav(row, kpi_ivt, mean_perc_kpi), axis=1)
         
         return regist_df
     
