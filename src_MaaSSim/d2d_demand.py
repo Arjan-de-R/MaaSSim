@@ -480,10 +480,13 @@ def read_requests_csv(inData, path):
 
 def sample_from_database(inData, params):
     "samples nP from large preprocessed demand dataset"
-    inData.requests = inData.requests.sample(params.nP, replace=False, random_state=1)
     inData.requests.treq = pd.to_datetime(inData.requests.treq)
     inData.requests.ttrav = pd.to_timedelta(inData.requests.ttrav)
     inData.requests.ttrav_bike = pd.to_timedelta(inData.requests.ttrav_bike)
+    inData.requests = inData.requests.loc[(inData.requests.treq - inData.requests.treq.min()).dt.seconds < (params.simTime * 3600)]
+    if params.nP > inData.requests.shape[0]:
+        raise Exception("Number of travellers is larger than demand dataset")
+    inData.requests = inData.requests.sample(params.nP, replace=False, random_state=1)
     inData.requests = inData.requests.sort_values(by=['treq']).reset_index(drop=True)
     inData.requests.index.name = 'pax_id'
     inData.passengers = pd.DataFrame(index=inData.requests.index, columns=inData.passengers.columns)
