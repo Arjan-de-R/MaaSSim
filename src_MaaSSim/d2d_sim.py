@@ -82,7 +82,7 @@ def D2D_stop_crit(*args, **kwargs):
 
 def return_scn_params(_params, key, val):
     '''updates parameter files, including scenario-specific parameters'''
-    if key in ['comm_rate', 'fare', 'base_fare', 'reg_cap', 'ptcp_cap', 'service_types']:
+    if key in ['comm_rate', 'fare', 'base_fare', 'reg_cap', 'ptcp_cap', 'service_types', 'pool_discount', 'start_reg_plf_share']:
         _params.platforms[key] = val
     if key == 'gini':
         _params.evol.drivers[key] = val
@@ -100,18 +100,28 @@ def return_scn_params(_params, key, val):
         _params.evol.drivers.inform.prob_start = val
     if key == 'reg_start':
         _params.evol.drivers.regist.prob_start = val
-    if key == 'init_inc_ratio':
+    if key in ['init_inc_ratio', 'start_perc_inc_avg_ratio']:
         _params.evol.drivers[key] = val
-    if key == 'start_wait':
+    if key in ['start_wait', 'start_pool_detour']:
         _params.evol.travellers.inform[key] = val
-    if key in ['cost_comp', 'samp', 'min_days']:
+    if key in ['cost_comp', 'min_days']:
         _params.evol.drivers.regist[key] = val
+    if key == 'samp':
+         _params.evol.drivers.regist[key] = val
+         _params.evol.travellers.regist[key] = val
     if key == 'kappa':
         _params.evol.travellers[key] = val
     if key == 'beta_reg':
         _params.evol.drivers.regist.beta = val
     if key == 'beta_ptcp':
         _params.evol.drivers.particip.beta = val
+    if key == 'util_multiplier':
+        _params.evol.travellers.regist[key] = val
+    if key == 'sup_util_multiplier':
+        _params.evol.drivers.regist.util_multiplier = val
+    if key == 'num_signals':
+        _params.evol.travellers.inform[key] = val
+        _params.evol.drivers.inform[key] = val
     else:
         _params[key] = val
 
