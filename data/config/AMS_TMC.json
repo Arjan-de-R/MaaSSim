@@ -1,5 +1,5 @@
 {
-    "NAME": "FM_AMS_cmpt",
+    "NAME": "AMS_TMC",
     "city": "Amsterdam, Netherlands",
     "nP": 100000,
     "nV": 2500,
@@ -110,18 +110,19 @@
             "gini": 0.35,
             "init_inc_ratio": 1,
             "inform": {
-                "prob_start": 0.2,
+                "prob_start": 1,
                 "beta": 1,
                 "num_signals": 50
             },
             "regist": {
-                "prob_start": 0.5,
+                "prob_start": 1,
                 "beta": 1,
                 "cost_comp": 20,
                 "samp": 0.15,
                 "min_work_exp": 0,
-                "min_days": 5,
-                "util_multiplier": 5
+                "min_days": 0,
+                "util_multiplier": 5,
+                "auto": true
             },
             "particip": {
                 "beta": 0.05,
@@ -133,7 +134,7 @@
         },
         "travellers": {
             "inform": {
-                "prob_start": 0.2,
+                "prob_start": 1,
                 "beta": 4,
                 "start_wait": 0,
                 "num_signals": 50
@@ -164,7 +165,8 @@
                 "prob_start": 1,
                 "samp": 0.15,
                 "min_days": 5,
-                "util_multiplier": 10
+                "util_multiplier": 10,
+                "auto": true
             },
             "kappa_comm_reg": 0.2,
             "kappa_comm_not_reg": 0.3333333
@@ -189,7 +191,7 @@
     },
     "dem_mh_share": 0,
     "sup_mh_share": 0,
-    "study_name": "competition_trb24",
+    "study_name": "tmc",
     "convergence": {
         "req_steady_days": 10,
         "factor": 0.002,
