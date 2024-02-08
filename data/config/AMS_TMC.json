@@ -126,7 +126,8 @@
             },
             "particip": {
                 "beta": 0.05,
-                "probabilistic": true
+                "probabilistic": true,
+                "auto": true
             },
             "kappa_comm_reg": 0.2,
             "kappa_comm_not_reg": 0.3333333,
