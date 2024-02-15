@@ -169,6 +169,7 @@
                 "util_multiplier": 10,
                 "auto": true
             },
+            "plf_choice": "preday",
             "kappa_comm_reg": 0.2,
             "kappa_comm_not_reg": 0.3333333
         }
@@ -200,5 +201,29 @@
         "second_moving_avg": 50,
         "abs_ptcp_diff_dem": 2,
         "abs_ptcp_diff_sup": 0.05
+    },
+    "tmc": {
+        "credit_mode": {
+            "bike": {
+                "base": 0,
+                "dist": 0
+            },
+            "car": {
+                "base": 10,
+                "dist": 0
+            },
+            "pt": {
+                "base": 1,
+                "dist": 0
+            },
+            "solo": {
+                "base": 5,
+                "dist": 0
+            },
+            "pool": {
+                "base": 2,
+                "dist": 0
+            }
+        }
     }
 }

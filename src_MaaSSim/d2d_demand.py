@@ -172,7 +172,14 @@ def update_d2d_travellers(*args, **kwargs):
     ret['dist'] = sim.inData.requests.dist.to_numpy()
     ret['informed'] = sim.passengers.informed.to_numpy()
     ret['registered'] = pax.registered
-    ret['requests'] = (pax.mode_day == 'rs').to_numpy()
+    if params.evol.travellers.plf_choice == 'preday':
+        def replace_false_by_true_at_index(arr, index):
+            arr[index] = True
+            return arr
+        pax['requests'] = pax.apply(lambda row: np.array([False] * len(params.platforms.service_types)), axis=1)
+        ret['requests'] = pax.apply(lambda row: row.requests if not row.mode_day.startswith('rs') else replace_false_by_true_at_index(row.requests, int(row.mode_day.split("_")[-1])), axis=1)
+    else:
+        ret['requests'] = (pax.mode_day == 'rs').to_numpy() # TODO: not correct: only requests with chosen plf
     ret['requests'] =  ret.apply(lambda row: row.requests * row.registered, axis=1)
     ret['LOSES_PATIENCE'] = sim.last_res.pax_exp.LOSES_PATIENCE
     ret['gets_offer'] = ret.apply(lambda row: ~np.where(row.LOSES_PATIENCE == None, True, row.LOSES_PATIENCE).astype(bool), axis=1)
@@ -297,7 +304,7 @@ def perc_rs_indicators(row):
 
 
 def mode_preday(inData, params):
-    "determine the mode at the start of a day for a pool of travellers"
+    "determine the mode at the start of a day for a pool of travellers (if they participate only with (all) platforms they are registered with)"
     passengers = inData.passengers
 
     df = inData.passengers.copy()
@@ -309,6 +316,54 @@ def mode_preday(inData, params):
     cuml = probabilities.cumsum(axis=1)
     draw = cuml.gt(np.random.random(len(passengers)),axis=0) * 1
     probabilities['decis'] = draw.idxmax(axis="columns")
+    passengers['mode_day'] = probabilities.decis
+    
+    return passengers
+
+
+def mode_preday_plf_choice(inData, params, **kwargs):
+    "determine the mode at the start of a day for a pool of travellers (if they are single-homing yet possibly registered with more than 1 platform and still have to choose)"
+    credit_price = kwargs.get('credit_price')
+    
+    passengers = inData.passengers
+    beta_cost = params.evol.travellers.mode_pref.beta_cost
+    U_bike = passengers.U_bike
+    U_car = passengers.U_car
+    U_pt = passengers.U_pt
+
+    ## RIDESOURCING (PREFERRED PLATFORM)
+    df = inData.passengers.copy()
+    df['rs_credit'] = inData.requests.rs_credit.copy()
+    df['U_rs_plf'] = util_rs(inData, params, df.expected_wait, df.expected_ivt, df.expected_km_fare, inData.requests.dist)
+    if params.tmc:
+        df['U_rs_plf'] = df.apply(lambda row: row.U_rs_plf - beta_cost * row.rs_credit * credit_price, axis=1)
+
+    def unregist_to_nan(arr):
+        arr[~arr] = np.nan
+        return arr
+
+    df['U_rs_plf'] = df.apply(lambda row: row.U_rs_plf * unregist_to_nan(row.registered), axis=1) # only keep utility of platforms one is registered with
+    df['prob_plf'] = df.apply(lambda row: np.array([(np.exp(row.U_rs_plf[plf]) / np.exp(row.U_rs_plf).sum()) for plf in inData.platforms.index]), axis=1)
+    df['chosen_plf_index'] = df.apply(lambda row: np.random.choice(len(row.prob_plf), p=np.nan_to_num(row.prob_plf)), axis=1)
+    df['U_rs'] = df.apply(lambda row: row.U_rs_plf[row.chosen_plf_index], axis=1)
+
+    ## OTHER MODES
+    # TODO: Here, we need to determine U_car based on learned in-vehicle time (dep. on traffic conditions)
+    if params.tmc:
+        # subtract mode credit costs from utility
+        U_bike = U_bike - beta_cost * inData.requests.bike_credit * credit_price
+        U_car = U_car - beta_cost * inData.requests.car_credit * credit_price
+        U_pt = U_pt - beta_cost * inData.requests.pt_credit * credit_price
+
+    utils = pd.DataFrame({'bike': U_bike, 'car': U_car, 'pt': U_pt, 'rs': df.U_rs})
+
+    ## ACTUAL MODE CHOICE
+    probabilities = mode_probs(utils)
+    cuml = probabilities.cumsum(axis=1)
+    draw = cuml.gt(np.random.random(len(passengers)),axis=0) * 1
+    probabilities['decis'] = draw.idxmax(axis="columns")
+    probabilities['pref_rs_plf'] = df.chosen_plf_index.copy()
+    probabilities['decis'] = probabilities.apply(lambda row: row.decis + '_' + str(row.pref_rs_plf) if row.decis == 'rs' else row.decis, axis=1)
     passengers['mode_day'] = probabilities.decis
     
     return passengers
@@ -385,7 +440,9 @@ def util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare, rs_dist, trav_vot=False
     
     if not trav_vot: # determine utility for all passengers
         rs_fare = np.ones(len(inData.passengers)) * params.platforms.base_fare + rs_km_fare * rs_dist / 1000
-        rs_fare[rs_fare < params.platforms.min_fare] += params.platforms.min_fare # min fare for solo ride
+        # TODO: different minimum fare for pooling provider (= (1-discount) * min_solo_fare)
+        # rs_fare[rs_fare < params.platforms.min_fare] += params.platforms.min_fare # min fare for solo ride
+        rs_fare =  rs_fare.apply(lambda arr: np.maximum(params.platforms.min_fare, arr))
         beta_ivt = passengers.VoT * prefs.beta_cost / 3600
         ASC_rs = passengers.ASC_rs
     else:  # only for an individual traveller
