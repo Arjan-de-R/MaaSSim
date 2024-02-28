@@ -337,23 +337,56 @@ def mode_preday_plf_choice(inData, params, **kwargs):
     df['U_rs_plf'] = util_rs(inData, params, df.expected_wait, df.expected_ivt, df.expected_km_fare, inData.requests.dist)
     if params.tmc:
         df['U_rs_plf'] = df.apply(lambda row: row.U_rs_plf - beta_cost * row.rs_credit * credit_price, axis=1)
+        # if not sufficient credit, mode is excluded from choice set
+
+        def util_if_insufficient_credit(row):
+            util = row.U_rs_plf
+            sufficient_credit = (row.rs_credit <= row.tmc_balance)
+            util[sufficient_credit == False] = -math.inf
+            return util
+
+        df.U_rs_plf = df.apply(lambda row: util_if_insufficient_credit(row), axis=1)
 
     def unregist_to_nan(arr):
         arr[~arr] = np.nan
         return arr
+    
+    def util_rs_plf(row):
+        '''determine utility of ridesourcing option based on specific platform'''
+        if not np.all(np.isneginf(row.U_rs_plf)):  # enough credit to use at least one of the platforms
+            chosen_plf_index = np.random.choice(len(row.prob_plf), p=np.nan_to_num(row.prob_plf))
+            U_rs = row.U_rs_plf[chosen_plf_index]
+        else: # not enough credit for ridesourcing
+            chosen_plf_index = 0
+            U_rs = -math.inf
+
+        return U_rs, int(chosen_plf_index)
 
     df['U_rs_plf'] = df.apply(lambda row: row.U_rs_plf * unregist_to_nan(row.registered), axis=1) # only keep utility of platforms one is registered with
     df['prob_plf'] = df.apply(lambda row: np.array([(np.exp(row.U_rs_plf[plf]) / np.exp(row.U_rs_plf).sum()) for plf in inData.platforms.index]), axis=1)
-    df['chosen_plf_index'] = df.apply(lambda row: np.random.choice(len(row.prob_plf), p=np.nan_to_num(row.prob_plf)), axis=1)
-    df['U_rs'] = df.apply(lambda row: row.U_rs_plf[row.chosen_plf_index], axis=1)
+    df[['U_rs','chosen_plf_index']] = df.apply(lambda row: util_rs_plf(row), axis=1, result_type='expand')
+    df['chosen_plf_index'] = df['chosen_plf_index'].astype(int)
 
     ## OTHER MODES
     # TODO: Here, we need to determine U_car based on learned in-vehicle time (dep. on traffic conditions)
     if params.tmc:
+        df['bike_credit'] = inData.requests.bike_credit
+        df['car_credit'] = inData.requests.car_credit
+        df['pt_credit'] = inData.requests.pt_credit
+
         # subtract mode credit costs from utility
-        U_bike = U_bike - beta_cost * inData.requests.bike_credit * credit_price
-        U_car = U_car - beta_cost * inData.requests.car_credit * credit_price
-        U_pt = U_pt - beta_cost * inData.requests.pt_credit * credit_price
+        df.U_bike = U_bike - beta_cost * inData.requests.bike_credit * credit_price
+        df.U_car = U_car - beta_cost * inData.requests.car_credit * credit_price
+        df.U_pt = U_pt - beta_cost * inData.requests.pt_credit * credit_price
+
+        # if not sufficient credit, mode is excluded from choice set
+        df.U_bike = df.apply(lambda row: row.U_bike if row.bike_credit <= row.tmc_balance else -math.inf, axis=1)
+        df.U_car = df.apply(lambda row: row.U_car if row.car_credit <= row.tmc_balance else -math.inf, axis=1)
+        df.U_pt = df.apply(lambda row: row.U_pt if row.pt_credit <= row.tmc_balance else -math.inf, axis=1)
+
+        U_bike = df.U_bike
+        U_car = df.U_car
+        U_pt = df.U_pt
 
     utils = pd.DataFrame({'bike': U_bike, 'car': U_car, 'pt': U_pt, 'rs': df.U_rs})
 
@@ -363,6 +396,12 @@ def mode_preday_plf_choice(inData, params, **kwargs):
     draw = cuml.gt(np.random.random(len(passengers)),axis=0) * 1
     probabilities['decis'] = draw.idxmax(axis="columns")
     probabilities['pref_rs_plf'] = df.chosen_plf_index.copy()
+
+    if params.tmc:
+        # opt out if not enough credit to travel (for any mode)
+        probabilities['insuff_credit'] = df.apply(lambda row: (row.U_bike == -math.inf) and (row.U_car == -math.inf) and (row.U_pt == -math.inf) and (row.U_rs == -math.inf), axis=1)
+        probabilities['decis'] = probabilities.apply(lambda row: "not_enough_credit" if row.insuff_credit else row.decis, axis=1)
+
     probabilities['decis'] = probabilities.apply(lambda row: row.decis + '_' + str(row.pref_rs_plf) if row.decis == 'rs' else row.decis, axis=1)
     passengers['mode_day'] = probabilities.decis
     
