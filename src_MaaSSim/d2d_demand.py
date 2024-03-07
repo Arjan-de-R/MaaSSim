@@ -327,6 +327,7 @@ def mode_preday_plf_choice(inData, params, **kwargs):
     
     passengers = inData.passengers
     beta_cost = params.evol.travellers.mode_pref.beta_cost
+    beta_cost_credit = params.tmc.get('cost_credit', 0)
     U_bike = passengers.U_bike
     U_car = passengers.U_car
     U_pt = passengers.U_pt
@@ -336,7 +337,7 @@ def mode_preday_plf_choice(inData, params, **kwargs):
     df['rs_credit'] = inData.requests.rs_credit.copy()
     df['U_rs_plf'] = util_rs(inData, params, df.expected_wait, df.expected_ivt, df.expected_km_fare, inData.requests.dist)
     if params.tmc:
-        df['U_rs_plf'] = df.apply(lambda row: row.U_rs_plf - beta_cost * row.rs_credit * credit_price, axis=1)
+        df['U_rs_plf'] = df.apply(lambda row: row.U_rs_plf - beta_cost_credit * row.rs_credit * credit_price, axis=1)
         # if not sufficient credit, mode is excluded from choice set
 
         def util_if_insufficient_credit(row):
