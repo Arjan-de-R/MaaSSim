@@ -376,9 +376,9 @@ def mode_preday_plf_choice(inData, params, **kwargs):
         df['pt_credit'] = inData.requests.pt_credit
 
         # subtract mode credit costs from utility
-        df.U_bike = U_bike - beta_cost * inData.requests.bike_credit * credit_price
-        df.U_car = U_car - beta_cost * inData.requests.car_credit * credit_price
-        df.U_pt = U_pt - beta_cost * inData.requests.pt_credit * credit_price
+        df.U_bike = U_bike - beta_cost_credit * inData.requests.bike_credit * credit_price
+        df.U_car = U_car - beta_cost_credit * inData.requests.car_credit * credit_price
+        df.U_pt = U_pt - beta_cost_credit * inData.requests.pt_credit * credit_price
 
         # if not sufficient credit, mode is excluded from choice set
         df.U_bike = df.apply(lambda row: row.U_bike if row.bike_credit <= row.tmc_balance else -math.inf, axis=1)
