@@ -1,6 +1,6 @@
 {
     "NAME": "AMS_TMC",
-    "city": "Amsterdam, Netherlands",
+    "city": "Amsterdam Noord",
     "nP": 100000,
     "nV": 2500,
     "times": {
@@ -21,8 +21,8 @@
         "main": "/Users/rkucharski/Documents/GitHub/MaaSSim",
         "data": "/Users/rkucharski/Documents/GitHub/MaaSSim/data",
         "params": "MaaSSim\\data\\config",
-        "G": "MaaSSim\\data\\graphs\\Amsterdam.graphml",
-        "skim": "MaaSSim\\data\\graphs\\Amsterdam.csv",
+        "G": "MaaSSim\\data\\graphs\\Amsterdam Noord.graphml",
+        "skim": "MaaSSim\\data\\graphs\\Amsterdam Noord.csv",
         "_ipython_display_": {},
         "_repr_mimebundle_": {},
         "_repr_html_": {},
@@ -203,6 +203,12 @@
         "abs_ptcp_diff_sup": 0.05
     },
     "tmc": {
+        "price": {
+            "min": 0,
+            "max": 1,
+            "step": 0.01
+        },
+        "max_balance": 100,
         "credit_mode": {
             "bike": {
                 "base": 0,
@@ -224,6 +230,7 @@
                 "base": 2,
                 "dist": 0
             }
-        }
+        },
+        "starting_allocation": 20
     }
 }
