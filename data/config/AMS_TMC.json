@@ -41,7 +41,8 @@
     "dist_threshold": 100000,
     "big_time": 10,
     "sleep": false,
-    "simTime": 8,
+    "start_time_hour": 16,
+    "simTime": 2,
     "demand_structure": {
         "origins_dispertion": -0.0003,
         "destinations_dispertion": -0.001,
@@ -205,7 +206,7 @@
     "tmc": {
         "price": {
             "min": 0,
-            "max": 1,
+            "max": 2,
             "step": 0.01
         },
         "max_balance": 100,
