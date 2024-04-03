@@ -162,6 +162,7 @@ def update_d2d_travellers(*args, **kwargs):
     sim = kwargs.get('sim', None)
     params = kwargs.get('params', None)
     pax = kwargs.get('pax', None)
+    congestion_factor = kwargs.get('congestion_factor', None)
 
     ret = pd.DataFrame()
     ret['pax'] = np.arange(0, len(sim.passengers))
@@ -187,6 +188,9 @@ def update_d2d_travellers(*args, **kwargs):
     ret['accepts_offer'] = sim.last_res.pax_exp.apply(lambda row: offer_accepted(params, row), axis=1)
     ret['xp_wait'] = sim.last_res.pax_exp.WAIT.to_numpy()
     ret['xp_ivt'] = sim.last_res.pax_exp.TRAVEL.to_numpy()
+    if congestion_factor: # congestion factor depending on total vehicle kilometres
+        ret['xp_ivt'] = ret['xp_ivt'] * congestion_factor
+        ret['xp_wait'] = ret['xp_wait'] * congestion_factor
     ret['xp_ops'] = sim.last_res.pax_exp.OPERATIONS.to_numpy()
     ret['xp_tt_total'] = ret.xp_wait + ret.xp_ivt + ret.xp_ops
     ret['xp_ivt'] = ret.apply(lambda row: row.xp_ivt * zero_to_nan(np.ones(len(row.accepts_offer)) * row.requests), axis=1)
