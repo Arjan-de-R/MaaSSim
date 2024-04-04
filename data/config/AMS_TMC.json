@@ -13,8 +13,7 @@
     },
     "speeds": {
         "walk": 1.2,
-        "bike": 4.1666667,
-        "congestion_factor": 0.85
+        "bike": 4.1666667
     },
     "t0": "2023-06-13 09:00:00",
     "paths": {
@@ -233,5 +232,8 @@
             }
         },
         "starting_allocation": 20
+    },
+    "congestion": {
+        "start_perc": 1.2
     }
 }

@@ -188,9 +188,6 @@ def update_d2d_travellers(*args, **kwargs):
     ret['accepts_offer'] = sim.last_res.pax_exp.apply(lambda row: offer_accepted(params, row), axis=1)
     ret['xp_wait'] = sim.last_res.pax_exp.WAIT.to_numpy()
     ret['xp_ivt'] = sim.last_res.pax_exp.TRAVEL.to_numpy()
-    if congestion_factor: # congestion factor depending on total vehicle kilometres
-        ret['xp_ivt'] = ret['xp_ivt'] * congestion_factor
-        ret['xp_wait'] = ret['xp_wait'] * congestion_factor
     ret['xp_ops'] = sim.last_res.pax_exp.OPERATIONS.to_numpy()
     ret['xp_tt_total'] = ret.xp_wait + ret.xp_ivt + ret.xp_ops
     ret['xp_ivt'] = ret.apply(lambda row: row.xp_ivt * zero_to_nan(np.ones(len(row.accepts_offer)) * row.requests), axis=1)
@@ -328,18 +325,34 @@ def mode_preday(inData, params):
 def mode_preday_plf_choice(inData, params, **kwargs):
     "determine the mode at the start of a day for a pool of travellers (if they are single-homing yet possibly registered with more than 1 platform and still have to choose)"
     credit_price = kwargs.get('credit_price')
+    perc_congest_factor = kwargs.get('perc_congest_factor', 1)
     
     passengers = inData.passengers
-    beta_cost = params.evol.travellers.mode_pref.beta_cost
+    prefs = params.evol.travellers.mode_pref
+    props = params.alt_modes
     beta_cost_credit = params.tmc.get('cost_credit', 0)
+
+    # BICYCLE
     U_bike = passengers.U_bike
-    U_car = passengers.U_car
+    
+    # CAR
+    if perc_congest_factor == 1: # no congestion
+        U_car = passengers.U_car
+    else:
+        beta_ivt = inData.passengers.VoT * prefs.beta_cost / 3600
+        beta_access = beta_ivt * prefs.access_multip
+        ASC_car = inData.passengers.ASC_car
+        car_ivt = inData.requests.ttrav.dt.total_seconds()
+        car_cost = props.car.km_cost * (inData.requests.dist / 1000) + inData.requests.car_park_cost
+        U_car = beta_access * props.car.access_time + beta_ivt * car_ivt * perc_congest_factor + prefs.beta_cost * car_cost + ASC_car
+
+    # PUBLIC TRANSPORT
     U_pt = passengers.U_pt
 
     ## RIDESOURCING (PREFERRED PLATFORM)
     df = inData.passengers.copy()
     df['rs_credit'] = inData.requests.rs_credit.copy()
-    df['U_rs_plf'] = util_rs(inData, params, df.expected_wait, df.expected_ivt, df.expected_km_fare, inData.requests.dist)
+    df['U_rs_plf'] = util_rs(inData, params, df.expected_wait * perc_congest_factor, df.expected_ivt * perc_congest_factor, df.expected_km_fare, inData.requests.dist)
     if params.tmc:
         df['U_rs_plf'] = df.apply(lambda row: row.U_rs_plf - beta_cost_credit * row.rs_credit * credit_price, axis=1)
         # if not sufficient credit, mode is excluded from choice set
@@ -373,7 +386,6 @@ def mode_preday_plf_choice(inData, params, **kwargs):
     df['chosen_plf_index'] = df['chosen_plf_index'].astype(int)
 
     ## OTHER MODES
-    # TODO: Here, we need to determine U_car based on learned in-vehicle time (dep. on traffic conditions)
     if params.tmc:
         df['bike_credit'] = inData.requests.bike_credit
         df['car_credit'] = inData.requests.car_credit
