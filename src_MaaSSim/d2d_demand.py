@@ -344,16 +344,30 @@ def mode_preday_plf_choice(inData, params, **kwargs):
         ASC_car = inData.passengers.ASC_car
         car_ivt = inData.requests.ttrav.dt.total_seconds()
         car_cost = props.car.km_cost * (inData.requests.dist / 1000) + inData.requests.car_park_cost
+        if params.dem_mgmt == 'cgp':
+            car_cost = car_cost + inData.requests.through_center * params.zone_charge.get('car', 5)
         U_car = beta_access * props.car.access_time + beta_ivt * car_ivt * perc_congest_factor + prefs.beta_cost * car_cost + ASC_car
+    if params.dem_mgmt == 'lpr':
+        day = kwargs.get('day', None)
+        odd_day = ((day % 2) != 0)
+        allowed_to_drive = inData.passengers.odd_license if odd_day else ~inData.passengers.odd_license
+        U_car[~allowed_to_drive] = -math.inf
 
     # PUBLIC TRANSPORT
     U_pt = passengers.U_pt
 
     ## RIDESOURCING (PREFERRED PLATFORM)
     df = inData.passengers.copy()
-    df['rs_credit'] = inData.requests.rs_credit.copy()
-    df['U_rs_plf'] = util_rs(inData, params, df.expected_wait * perc_congest_factor, df.expected_ivt * perc_congest_factor, df.expected_km_fare, inData.requests.dist)
-    if params.tmc:
+    if params.dem_mgmt == 'cgp':
+        congestion_charge = []
+        for plf in range(len(params.platforms.service_types)):
+            plf_charge = params.zone_charge.get('solo', 5) if params.platforms.service_types[plf] == 'solo' else params.zone_charge.get('pool', 0)
+            congestion_charge.append(plf_charge)
+        df['U_rs_plf'] = util_rs(inData, params, df.expected_wait * perc_congest_factor, df.expected_ivt * perc_congest_factor, df.expected_km_fare, inData.requests.dist, congestion_charge=congestion_charge)
+    else:
+        df['U_rs_plf'] = util_rs(inData, params, df.expected_wait * perc_congest_factor, df.expected_ivt * perc_congest_factor, df.expected_km_fare, inData.requests.dist)
+    if params.dem_mgmt == 'tmc':
+        df['rs_credit'] = inData.requests.rs_credit.copy()
         df['U_rs_plf'] = df.apply(lambda row: row.U_rs_plf - beta_cost_credit * row.rs_credit * credit_price, axis=1)
         # if not sufficient credit, mode is excluded from choice set
 
@@ -386,7 +400,7 @@ def mode_preday_plf_choice(inData, params, **kwargs):
     df['chosen_plf_index'] = df['chosen_plf_index'].astype(int)
 
     ## OTHER MODES
-    if params.tmc:
+    if params.dem_mgmt == 'tmc':
         df['bike_credit'] = inData.requests.bike_credit
         df['car_credit'] = inData.requests.car_credit
         df['pt_credit'] = inData.requests.pt_credit
@@ -414,7 +428,7 @@ def mode_preday_plf_choice(inData, params, **kwargs):
     probabilities['decis'] = draw.idxmax(axis="columns")
     probabilities['pref_rs_plf'] = df.chosen_plf_index.copy()
 
-    if params.tmc:
+    if params.dem_mgmt == 'tmc':
         # opt out if not enough credit to travel (for any mode)
         probabilities['insuff_credit'] = df.apply(lambda row: (row.U_bike == -math.inf) and (row.U_car == -math.inf) and (row.U_pt == -math.inf) and (row.U_rs == -math.inf), axis=1)
         probabilities['decis'] = probabilities.apply(lambda row: "not_enough_credit" if row.insuff_credit else row.decis, axis=1)
@@ -489,7 +503,7 @@ def mode_probs(utils):
     return probabilities
 
 
-def util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare, rs_dist, trav_vot=False, trav_ASC=False):
+def util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare, rs_dist, trav_vot=False, trav_ASC=False, congestion_charge=None, through_center=False):
     '''determine utility of ridesourcing, either aggregated (if no trav_vot is provided) or for an individual traveller'''
     passengers = inData.passengers
     prefs = params.evol.travellers.mode_pref
@@ -499,11 +513,19 @@ def util_rs(inData, params, rs_wait, rs_ivt, rs_km_fare, rs_dist, trav_vot=False
         # TODO: different minimum fare for pooling provider (= (1-discount) * min_solo_fare)
         # rs_fare[rs_fare < params.platforms.min_fare] += params.platforms.min_fare # min fare for solo ride
         rs_fare =  rs_fare.apply(lambda arr: np.maximum(params.platforms.min_fare, arr))
+        if congestion_charge is not None:
+            df_cost = pd.DataFrame()
+            df_cost['rs_fare'] = rs_fare
+            df_cost['congest_charge'] = inData.requests.apply(lambda row: np.array(congestion_charge) * row.through_center, axis=1) 
+            rs_fare = df_cost.apply(lambda row: row.rs_fare + row.congest_charge, axis=1)
         beta_ivt = passengers.VoT * prefs.beta_cost / 3600
         ASC_rs = passengers.ASC_rs
     else:  # only for an individual traveller
         rs_fare = params.platforms.base_fare + rs_km_fare * rs_dist / 1000
         rs_fare = max(rs_fare, params.platforms.min_fare)
+        if congestion_charge is not None:
+            congestion_charge = np.array(congestion_charge) * through_center
+            rs_fare = rs_fare + congestion_charge
         beta_ivt = trav_vot * prefs.beta_cost / 3600
         ASC_rs = trav_ASC
 
@@ -519,7 +541,10 @@ def util_plfs(inData, params, row):
             ASC_rs = row.ASC_rs
         else:
             ASC_rs = row.ASC_pool
-        util_plf = util_plf + [util_rs(inData, params, row.perc_wait[plf], row.perc_ivt[plf], row.perc_fare[plf], row.dist, trav_vot=row.VoT, trav_ASC=ASC_rs)]
+        if params.dem_mgmt == 'cgp':
+            util_plf = util_plf + [util_rs(inData, params, row.perc_wait[plf], row.perc_ivt[plf], row.perc_fare[plf], row.dist, trav_vot=row.VoT, trav_ASC=ASC_rs, through_center=row.through_center)]
+        else:
+            util_plf = util_plf + [util_rs(inData, params, row.perc_wait[plf], row.perc_ivt[plf], row.perc_fare[plf], row.dist, trav_vot=row.VoT, trav_ASC=ASC_rs)]
     return util_plf
 
 
@@ -531,14 +556,22 @@ def learning_travs(params, prev_perc, exp):
     return new_perc
 
 
-def diff_parking(inData):
-    ox.config(log_console=True, use_cache=True)
-    Z = ox.graph_from_place('Centrum Amsterdam', network_type='drive')
-    Z_nodelist = list(Z.nodes)
+def prep_inData_nodes_centre(inData, params):
+    centre_nodes = nodes_in_centre(params)
     inData.nodes['center'] = False
-    inData.nodes.loc[inData.nodes.index.isin(Z_nodelist), 'center'] = True
+    inData.nodes.loc[inData.nodes.index.isin(centre_nodes), 'center'] = True
 
-    return inData
+    return inData, centre_nodes
+
+
+def nodes_in_centre(params):
+    '''determines which nodes are in city centre'''
+    ox.config(log_console=True, use_cache=True)
+    Z = ox.graph_from_place(params.city_centre, network_type='drive')
+    Z_nodelist = list(Z.nodes)
+
+    return Z_nodelist
+
 
 def sample_from_alba(inData, params):
     '''Samples nP from Albatross dataset, replicating requests if nP is larger than size of dataset'''
@@ -746,6 +779,8 @@ def platform_regist_trav(inData, end_day, **kwargs):
         df = new_perc_kpi(df, kpi_ivt)
         regist_df['new_perc_{}'.format(kpi)] = df["new_perc_kpi"].copy()
     
+    if params.dem_mgmt == 'cgp':
+        regist_df['through_center'] = inData.requests.through_center
     regist_df['util_reg_plf'] = regist_df.rename(columns={"new_perc_wait": "perc_wait", "new_perc_ivt": "perc_ivt", "new_perc_fare": "perc_fare"}).apply(lambda row: (np.array(util_plfs(inData, params, row)) * params.evol.travellers.regist.get('util_multiplier', 1)).tolist(), axis=1)
     regist_df['prob_reg_plf'] = regist_df.apply(lambda row: np.array([(np.exp(row.util_reg_plf[plf]) / np.exp(row.util_reg_plf).sum()) for plf in inData.platforms.index]), axis=1)
     regist_df['chosen_plf_index'] = regist_df.apply(lambda row: np.random.choice(len(row.prob_reg_plf), p=np.nan_to_num(row.prob_reg_plf)) if (np.nan_to_num(row.prob_reg_plf).sum() != 0) else 0, axis=1)
