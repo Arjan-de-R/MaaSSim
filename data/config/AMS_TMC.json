@@ -1,6 +1,7 @@
 {
     "NAME": "AMS_TMC",
-    "city": "Amsterdam Noord",
+    "city": "Amsterdam",
+    "city_centre": "Centrum Amsterdam",
     "nP": 100000,
     "nV": 2500,
     "times": {
@@ -20,8 +21,8 @@
         "main": "/Users/rkucharski/Documents/GitHub/MaaSSim",
         "data": "/Users/rkucharski/Documents/GitHub/MaaSSim/data",
         "params": "MaaSSim\\data\\config",
-        "G": "MaaSSim\\data\\graphs\\Amsterdam Noord.graphml",
-        "skim": "MaaSSim\\data\\graphs\\Amsterdam Noord.csv",
+        "G": "MaaSSim\\data\\graphs\\Amsterdam.graphml",
+        "skim": "MaaSSim\\data\\graphs\\Amsterdam.csv",
         "_ipython_display_": {},
         "_repr_mimebundle_": {},
         "_repr_html_": {},
@@ -144,7 +145,6 @@
             "kappa": 0.2,
             "min_prob": 0,
             "mode_pref": {
-                "mean_vot": 10,
                 "access_multip": 2,
                 "wait_multip": 2.5,
                 "bike_multip": 2,
@@ -159,7 +159,11 @@
                 "ASC_bike_sd": 5.75,
                 "min_wts_constant": -0.554,
                 "ivt_mean_lognorm": -2.7598699498320065,
-                "ivt_sigma_lognorm": 1
+                "ivt_sigma_lognorm": 1,
+                "ivt_credit_mean_lognorm": 0.756121979721334,
+                "ivt_credit_sigma_lognorm": 1,
+                "beta_credit_price": -0.305,
+                "beta_balance": 0
             },
             "prob_reg_start": 1,
             "regist": {
@@ -205,7 +209,7 @@
     "tmc": {
         "price": {
             "min": 0,
-            "max": 2,
+            "max": 10,
             "step": 0.01
         },
         "max_balance": 100,
