@@ -2,6 +2,8 @@
     "NAME": "AMS_TMC",
     "city": "Amsterdam",
     "city_centre": "Centrum Amsterdam",
+    "total_trips": 300000,
+    "total_road_dist": 1800,
     "nP": 100000,
     "nV": 2500,
     "times": {
@@ -138,8 +140,9 @@
             "inform": {
                 "prob_start": 1,
                 "beta": 4,
-                "start_wait": 0,
-                "num_signals": 50
+                "start_wait": 180,
+                "num_signals": 50,
+                "start_pool_detour": 0.2
             },
             "reject_penalty": 1800,
             "kappa": 0.2,
@@ -207,37 +210,53 @@
         "abs_ptcp_diff_sup": 0.05
     },
     "tmc": {
+        "duration": 30,
         "price": {
             "min": 0,
-            "max": 10,
+            "max": 2.5,
             "step": 0.01
         },
-        "max_balance": 100,
+        "max_balance_rel_to_init_allocation": 3,
+        "max_buy_day": 300,
         "credit_mode": {
             "bike": {
                 "base": 0,
                 "dist": 0
             },
             "car": {
-                "base": 10,
-                "dist": 0
+                "base": 0,
+                "dist": 10
             },
             "pt": {
-                "base": 1,
-                "dist": 0
+                "base": 0,
+                "dist": 2
             },
             "solo": {
-                "base": 5,
-                "dist": 0
+                "base": 0,
+                "dist": 15
             },
             "pool": {
-                "base": 2,
-                "dist": 0
+                "base": 0,
+                "dist": 10
             }
         },
-        "starting_allocation": 20
+        "allocated_credits_per_day": 2,
+        "pref_trading": {
+            "balance_util_percept": 2,
+            "excess_credit_param": 1,
+            "beta_monetary": -0.1
+        }
     },
     "congestion": {
-        "start_perc": 1.2
+        "start_perc": 1.2,
+        "min_delay_factor": 1.2,
+        "density_zero_speed": 50,
+        "avg_other_cars_on_road": 10000,
+        "start_congestion_density": 5
+    },
+    "zone_charge": {
+        "car": 10,
+        "solo": 10,
+        "pool": 0
     }
 }
