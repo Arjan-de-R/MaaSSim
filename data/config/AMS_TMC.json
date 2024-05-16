@@ -146,6 +146,7 @@
             },
             "reject_penalty": 1800,
             "kappa": 0.2,
+            "kappa_credit_price": 0.2,
             "min_prob": 0,
             "mode_pref": {
                 "access_multip": 2,
@@ -166,7 +167,8 @@
                 "ivt_credit_mean_lognorm": 0.756121979721334,
                 "ivt_credit_sigma_lognorm": 1,
                 "beta_credit_price": -0.305,
-                "beta_balance": 0
+                "beta_balance": 0,
+                "credit_percept": "monetary"
             },
             "prob_reg_start": 1,
             "regist": {
