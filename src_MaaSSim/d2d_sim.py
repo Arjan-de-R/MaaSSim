@@ -13,6 +13,8 @@ def d2d_summary_day(inData, drivers_summary, travs_summary):
     indicators_d2d = ['informed', 'registered', 'expected_wait', 'expected_ivt', 'expected_km_fare', 'days_since_reg']
     if 'tmc_balance' in inData.passengers.columns:
         indicators_d2d = indicators_d2d + ['tmc_balance','net_purchase','denied_order', 'money_balance','tot_credit_bought', 'tot_credit_sold']
+    if 'paid_cgp' in inData.passengers.columns:
+        indicators_d2d = indicators_d2d + ['paid_cgp']
     occ_strings = [s for s in travs_summary.columns if s.startswith("time_occ")]
     indicators_wd = indicators_wd + occ_strings
 
