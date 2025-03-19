@@ -11,7 +11,6 @@ import random
 import numpy as np
 import os
 
-from osmnx.distance import get_nearest_node
 import osmnx as ox
 import networkx as nx
 import json
@@ -93,7 +92,7 @@ def networkstats(inData):
     center_x = pd.DataFrame((inData.G.nodes(data='x')))[1].mean()
     center_y = pd.DataFrame((inData.G.nodes(data='y')))[1].mean()
 
-    nearest = get_nearest_node(inData.G, (center_y, center_x))
+    nearest = ox.nearest_nodes(inData.G, center_x, center_y)
     ret = DotMap({'center': nearest, 'radius': inData.skim[nearest].quantile(0.75)})
     return ret
 
@@ -141,7 +140,7 @@ def generate_vehicles(_inData, nV):
     status is IDLE
     """
     vehs = list()
-    for i in range(nV + 1):
+    for i in range(nV):
         vehs.append(empty_series(_inData.vehicles, name=i))
 
     vehs = pd.concat(vehs, axis=1, keys=range(1, nV + 1)).T

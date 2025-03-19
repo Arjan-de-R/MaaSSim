@@ -162,7 +162,7 @@ def platform_regist_driver(inData, end_day, **kwargs):
             xp = np.delete(xp, index_to_remove)
         # Now, check if the number of draws (num_signals_per_agent) is larger than the number of experiences
         if num_signals_per_agent >= len(xp): # if so, signals are equal to experience of all agents - everyone talks to everyone
-            signal = np.nanmean(xp)
+            signal = np.nanmean(xp) if len(xp) > 0 and not np.isnan(xp).all() else np.nan
         else: # If num_signals_per_agent is smaller, draw without replacement
             random_signals = np.random.choice(xp, size=num_signals_per_agent, replace=False)
             signal = np.nanmean(random_signals)

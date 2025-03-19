@@ -53,7 +53,7 @@ def load_OTP_result(params):
     for column in range(len(legs.columns)):
         legs[column] = legs[column].str.lstrip(', ')  # Remove leading commas
         # Set PT distance for walk segments and empty segments to zero (not part of fare calculation), and extract distance for PT legs
-        legs[column].fillna('', inplace=True)
+        legs.loc[:, column] = legs[column].fillna('')
         legs[column] = np.where(((legs[column].str.contains('WALK')==True) | (legs[column] == '')), 0, legs[column].str.split(',').str[2])
         legs[column] = legs[column].astype(int)
     # Calculate total PT distance
@@ -566,7 +566,8 @@ def prep_inData_nodes_centre(inData, params):
 
 def nodes_in_centre(params):
     '''determines which nodes are in city centre'''
-    ox.config(log_console=True, use_cache=True)
+    ox.settings.log_console = True
+    ox.settings.use_cache = True
     Z = ox.graph_from_place(params.city_centre, network_type='drive')
     Z_nodelist = list(Z.nodes)
 
@@ -697,7 +698,7 @@ def platform_regist_trav(inData, end_day, **kwargs):
                 xp = np.delete(xp, index_to_remove)
             # Now, check if the number of draws (num_signals_per_agent) is larger than the number of experiences
             if num_signals_per_agent >= len(xp): # if so, signals are equal to experience of all agents - everyone talks to everyone
-                signal = np.nanmean(xp)
+                signal = np.nanmean(xp) if len(xp) > 0 and not np.isnan(xp).all() else np.nan
             else:
                 # If num_signals_per_agent is smaller, draw without replacement
                 random_signals = np.random.choice(xp, size=num_signals_per_agent, replace=False)
