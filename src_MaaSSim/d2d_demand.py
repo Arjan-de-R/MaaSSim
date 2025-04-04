@@ -46,24 +46,26 @@ def load_OTP_result(params):
     df = pd.read_csv(params.paths.PT_trips, index_col='id')
     df.index.name = 'pax_id'
 
-    # Determine distance for all PT legs
-    # Split mode information in separate legs
-    legs = df['modes'].str.replace(r'[','')
-    legs = legs.str.split(']', expand=True)
-    for column in range(len(legs.columns)):
-        legs[column] = legs[column].str.lstrip(', ')  # Remove leading commas
-        # Set PT distance for walk segments and empty segments to zero (not part of fare calculation), and extract distance for PT legs
-        legs.loc[:, column] = legs[column].fillna('')
-        legs[column] = np.where(((legs[column].str.contains('WALK')==True) | (legs[column] == '')), 0, legs[column].str.split(',').str[2])
-        legs[column] = legs[column].astype(int)
-    # Calculate total PT distance
-    legs['PTdistance'] = legs.sum(axis=1, skipna=True)
-    df = df.merge(legs['PTdistance'], how='left', left_index=True, right_index=True)
-    # Calculate fare
-    df['PTfare'] = round((df['PTdistance'] * (1/1000) * params.alt_modes.pt.km_fare) + params.alt_modes.pt.base_fare,2)
-    df.loc[(df['PTdistance'] == 0), 'PTfare'] = 9999  # If only walking is used, set PT fare to zero
-    
-    return df
+    if 'PTdistance' in df.columns: # otp data is already converted to compatible PT attributes
+        return df
+    else:
+        # Determine distance for all PT legs
+        # Split mode information in separate legs
+        legs = df['modes'].str.replace(r'[','')
+        legs = legs.str.split(']', expand=True)
+        for column in range(len(legs.columns)):
+            legs[column] = legs[column].str.lstrip(', ')  # Remove leading commas
+            # Set PT distance for walk segments and empty segments to zero (not part of fare calculation), and extract distance for PT legs
+            legs.loc[:, column] = legs[column].fillna('')
+            legs[column] = np.where(((legs[column].str.contains('WALK')==True) | (legs[column] == '')), 0, legs[column].str.split(',').str[2])
+            legs[column] = legs[column].astype(int)
+        # Calculate total PT distance
+        legs['PTdistance'] = legs.sum(axis=1, skipna=True)
+        df = df.merge(legs['PTdistance'], how='left', left_index=True, right_index=True)
+        # Calculate fare
+        df['PTfare'] = round((df['PTdistance'] * (1/1000) * params.alt_modes.pt.km_fare) + params.alt_modes.pt.base_fare,2)
+        df.loc[(df['PTdistance'] == 0), 'PTfare'] = 9999  # If only walking is used, set PT fare to zero
+        return df
 
 
 def d2d_kpi_pax(*args ,**kwargs):
@@ -439,6 +441,123 @@ def mode_preday_plf_choice(inData, params, **kwargs):
     return passengers
 
 
+def mode_preday_plf_choice(inData, params, **kwargs):
+    "determine the mode at the start of a day for a pool of travellers (if they are single-homing yet possibly registered with more than 1 platform and still have to choose)"
+    credit_price = kwargs.get('credit_price')
+    perc_congest_factor = kwargs.get('perc_congest_factor', 1)
+    
+    passengers = inData.passengers
+    prefs = params.evol.travellers.mode_pref
+    props = params.alt_modes
+    beta_cost_credit = params.tmc.get('cost_credit', 0)
+
+    # BICYCLE
+    U_bike = passengers.U_bike
+    
+    # CAR
+    if perc_congest_factor == 1: # no congestion
+        U_car = passengers.U_car
+    else:
+        beta_ivt = inData.passengers.VoT * prefs.beta_cost / 3600
+        beta_access = beta_ivt * prefs.access_multip
+        ASC_car = inData.passengers.ASC_car
+        car_ivt = inData.requests.ttrav.dt.total_seconds()
+        car_cost = props.car.km_cost * (inData.requests.dist / 1000) + inData.requests.car_park_cost
+        if params.dem_mgmt == 'cgp':
+            car_cost = car_cost + inData.requests.through_center * params.zone_charge.get('car', 5)
+        U_car = beta_access * props.car.access_time + beta_ivt * car_ivt * perc_congest_factor + prefs.beta_cost * car_cost + ASC_car
+    if params.dem_mgmt == 'lpr':
+        day = kwargs.get('day', None)
+        odd_day = ((day % 2) != 0)
+        allowed_to_drive = inData.passengers.odd_license if odd_day else ~inData.passengers.odd_license
+        U_car[~allowed_to_drive] = -math.inf
+
+    # PUBLIC TRANSPORT
+    U_pt = passengers.U_pt
+
+    ## RIDESOURCING (PREFERRED PLATFORM)
+    df = inData.passengers.copy()
+    if params.dem_mgmt == 'cgp':
+        congestion_charge = []
+        for plf in range(len(params.platforms.service_types)):
+            plf_charge = params.zone_charge.get('solo', 5) if params.platforms.service_types[plf] == 'solo' else params.zone_charge.get('pool', 0)
+            congestion_charge.append(plf_charge)
+        df['U_rs_plf'] = util_rs(inData, params, df.expected_wait * perc_congest_factor, df.expected_ivt * perc_congest_factor, df.expected_km_fare, inData.requests.dist, congestion_charge=congestion_charge)
+    else:
+        df['U_rs_plf'] = util_rs(inData, params, df.expected_wait * perc_congest_factor, df.expected_ivt * perc_congest_factor, df.expected_km_fare, inData.requests.dist)
+    if params.dem_mgmt == 'tmc':
+        df['rs_credit'] = inData.requests.rs_credit.copy()
+        df['U_rs_plf'] = df.apply(lambda row: row.U_rs_plf - beta_cost_credit * row.rs_credit * credit_price, axis=1)
+        # if not sufficient credit, mode is excluded from choice set
+
+        def util_if_insufficient_credit(row):
+            util = row.U_rs_plf
+            sufficient_credit = (row.rs_credit <= row.tmc_balance)
+            util[sufficient_credit == False] = -math.inf
+            return util
+
+        df.U_rs_plf = df.apply(lambda row: util_if_insufficient_credit(row), axis=1)
+
+    def unregist_to_nan(arr):
+        arr[~arr] = np.nan
+        return arr
+    
+    def util_rs_plf(row):
+        '''determine utility of ridesourcing option based on specific platform'''
+        if not np.all(np.isneginf(row.U_rs_plf)):  # enough credit to use at least one of the platforms
+            chosen_plf_index = np.random.choice(len(row.prob_plf), p=np.nan_to_num(row.prob_plf))
+            U_rs = row.U_rs_plf[chosen_plf_index]
+        else: # not enough credit for ridesourcing
+            chosen_plf_index = 0
+            U_rs = -math.inf
+
+        return U_rs, int(chosen_plf_index)
+
+    df['U_rs_plf'] = df.apply(lambda row: row.U_rs_plf * unregist_to_nan(row.registered), axis=1) # only keep utility of platforms one is registered with
+    df['prob_plf'] = df.apply(lambda row: np.array([(np.exp(row.U_rs_plf[plf]) / np.exp(row.U_rs_plf).sum()) for plf in inData.platforms.index]), axis=1)
+    df[['U_rs','chosen_plf_index']] = df.apply(lambda row: util_rs_plf(row), axis=1, result_type='expand')
+    df['chosen_plf_index'] = df['chosen_plf_index'].astype(int)
+
+    ## OTHER MODES
+    if params.dem_mgmt == 'tmc':
+        df['bike_credit'] = inData.requests.bike_credit
+        df['car_credit'] = inData.requests.car_credit
+        df['pt_credit'] = inData.requests.pt_credit
+
+        # subtract mode credit costs from utility
+        df.U_bike = U_bike - beta_cost_credit * inData.requests.bike_credit * credit_price
+        df.U_car = U_car - beta_cost_credit * inData.requests.car_credit * credit_price
+        df.U_pt = U_pt - beta_cost_credit * inData.requests.pt_credit * credit_price
+
+        # if not sufficient credit, mode is excluded from choice set
+        df.U_bike = df.apply(lambda row: row.U_bike if row.bike_credit <= row.tmc_balance else -math.inf, axis=1)
+        df.U_car = df.apply(lambda row: row.U_car if row.car_credit <= row.tmc_balance else -math.inf, axis=1)
+        df.U_pt = df.apply(lambda row: row.U_pt if row.pt_credit <= row.tmc_balance else -math.inf, axis=1)
+
+        U_bike = df.U_bike
+        U_car = df.U_car
+        U_pt = df.U_pt
+
+    utils = pd.DataFrame({'bike': U_bike, 'car': U_car, 'pt': U_pt, 'rs': df.U_rs})
+
+    ## ACTUAL MODE CHOICE
+    probabilities = mode_probs(utils)
+    cuml = probabilities.cumsum(axis=1)
+    draw = cuml.gt(np.random.random(len(passengers)),axis=0) * 1
+    probabilities['decis'] = draw.idxmax(axis="columns")
+    probabilities['pref_rs_plf'] = df.chosen_plf_index.copy()
+
+    if params.dem_mgmt == 'tmc':
+        # opt out if not enough credit to travel (for any mode)
+        probabilities['insuff_credit'] = df.apply(lambda row: (row.U_bike == -math.inf) and (row.U_car == -math.inf) and (row.U_pt == -math.inf) and (row.U_rs == -math.inf), axis=1)
+        probabilities['decis'] = probabilities.apply(lambda row: "not_enough_credit" if row.insuff_credit else row.decis, axis=1)
+
+    probabilities['decis'] = probabilities.apply(lambda row: row.decis + '_' + str(row.pref_rs_plf) if row.decis == 'rs' else row.decis, axis=1)
+    passengers['mode_day'] = probabilities.decis
+    
+    return passengers
+
+
 def util_alt_modes(inData, params):
     "determine utility of alternative modes for group of travellers"
     requests = inData.requests
@@ -637,6 +756,10 @@ def sample_from_database(inData, params):
     inData.requests = inData.requests.sample(params.nP, replace=False, random_state=1)
     inData.requests = inData.requests.sort_values(by=['treq']).reset_index(drop=True)
     inData.requests.index.name = 'pax_id'
+    if params.paths.get('passengers', False): # passenger data specified as input
+        inData.passengers = inData.passengers[inData.passengers.index.isin(inData.requests["pax_id"])].copy()
+    else: # no passenger data is specified as input
+        inData.passengers = pd.DataFrame(index=inData.requests.index, columns=inData.passengers.columns)
     inData.passengers = pd.DataFrame(index=inData.requests.index, columns=inData.passengers.columns)
     inData.passengers['pax_id'] = inData.passengers.index.copy()
     inData.passengers.pos = inData.requests.origin.copy()
