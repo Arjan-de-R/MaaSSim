@@ -1,0 +1,264 @@
+{
+    "NAME": "MRDH_TMC",
+    "city": "MRDH",
+    "total_trips": 300000,
+    "total_road_dist": 1800,
+    "nP": 100000,
+    "nV": 2500,
+    "times": {
+        "request": 15,
+        "transaction": 20,
+        "pickup": 30,
+        "dropoff": 10,
+        "patience": 600,
+        "pickup_patience": 90
+    },
+    "speeds": {
+        "walk": 1.2
+    },
+    "t0": "2023-06-13 09:00:00",
+    "paths": {
+        "main": "/Users/rkucharski/Documents/GitHub/MaaSSim",
+        "data": "/Users/rkucharski/Documents/GitHub/MaaSSim/data",
+        "params": "MaaSSim\\data\\config",
+        "_ipython_display_": {},
+        "_repr_mimebundle_": {},
+        "_repr_html_": {},
+        "_repr_markdown_": {},
+        "_repr_svg_": {},
+        "_repr_png_": {},
+        "_repr_pdf_": {},
+        "_repr_jpeg_": {},
+        "_repr_latex_": {},
+        "_repr_json_": {},
+        "_repr_javascript_": {},
+        "fleetpy_config": "constant_config.csv",
+        "requests": "MaaSSim/data/demand/MRDH/requests.csv",
+        "passengers": "MaaSSim/data/demand/MRDH/passengers.csv",
+        "PT_trips": "MaaSSim/data/demand/MRDH/req_PT.csv"
+    },
+    "dist_threshold": 100000,
+    "big_time": 10,
+    "sleep": false,
+    "start_time_hour": 7,
+    "simTime": 3,
+    "demand_structure": {
+        "origins_dispertion": -0.0003,
+        "destinations_dispertion": -0.001,
+        "temporal_dispertion": 0.3,
+        "temporal_distribution": "uniform"
+    },
+    "shareability": {
+        "windows": {
+            "pickup": [
+                -2,
+                5
+            ],
+            "dropoff": [
+                -10,
+                5
+            ]
+        },
+        "avg_speed": 10,
+        "shared_discount": 0.8,
+        "VoT": 0.005,
+        "WtS": 1.2,
+        "delay_value": 1.5,
+        "price": 1.5,
+        "matching_obj": "u_veh",
+        "pax_delay": 45,
+        "horizon": 600,
+        "max_degree": 600,
+        "share": 0
+    },
+    "parallel": {
+        "nThread": 1,
+        "nReplications": 1
+    },
+    "nD": 500,
+    "_ipython_display_": {},
+    "_repr_mimebundle_": {},
+    "_repr_html_": {},
+    "_repr_markdown_": {},
+    "_repr_svg_": {},
+    "_repr_png_": {},
+    "_repr_pdf_": {},
+    "_repr_jpeg_": {},
+    "_repr_latex_": {},
+    "_repr_json_": {},
+    "_repr_javascript_": {},
+    "platforms": {
+        "base_fare": 1.5,
+        "fare": 1.5,
+        "min_fare": 0,
+        "comm_rate": 0.25,
+        "max_wait_time": 600,
+        "match_obj": "func_key:total_system_time",
+        "max_rel_detour": 40,
+        "service_types": [
+            "solo",
+            "pool"
+        ],
+        "pool_discount": 0.5
+    },
+    "evol": {
+        "drivers": {
+            "kappa": 0.2,
+            "res_wage": {
+                "mean": 25
+            },
+            "gini": 0.35,
+            "init_inc_ratio": 1,
+            "inform": {
+                "prob_start": 1,
+                "beta": 1,
+                "num_signals": 50
+            },
+            "regist": {
+                "prob_start": 1,
+                "beta": 1,
+                "cost_comp": 20,
+                "samp": 0,
+                "min_work_exp": 0,
+                "min_days": 0,
+                "util_multiplier": 5,
+                "auto": true
+            },
+            "particip": {
+                "beta": 0.05,
+                "probabilistic": true,
+                "auto": true
+            },
+            "kappa_comm_reg": 0.2,
+            "kappa_comm_not_reg": 0.3333333,
+            "start_perc_inc_avg_ratio": 1
+        },
+        "travellers": {
+            "inform": {
+                "prob_start": 1,
+                "beta": 4,
+                "start_wait": 180,
+                "num_signals": 50,
+                "start_pool_detour": 0.2
+            },
+            "reject_penalty": 1800,
+            "kappa": 0.2,
+            "kappa_credit_price": 0.2,
+            "min_prob": 0,
+            "mode_pref": {
+                "access_multip": 2,
+                "wait_multip": 2.5,
+                "bike_multip": 2,
+                "beta_cost": -0.381,
+                "transfer_pen": 300,
+                "ASC_car": -1.96,
+                "ASC_rs": -5.18,
+                "ASC_pt": -4.14,
+                "ASC_car_sd": 3.19,
+                "ASC_rs_sd": 1.92,
+                "ASC_pt_sd": 1.15,
+                "ASC_bike_sd": 5.75,
+                "min_wts_constant": -0.554,
+                "ivt_mean_lognorm": -2.7598699498320065,
+                "ivt_sigma_lognorm": 1,
+                "ivt_credit_mean_lognorm": 0.756121979721334,
+                "ivt_credit_sigma_lognorm": 1,
+                "beta_credit_price": -0.305,
+                "beta_balance": 0,
+                "credit_percept": "monetary"
+            },
+            "prob_reg_start": 1,
+            "regist": {
+                "prob_start": 1,
+                "samp": 0,
+                "min_days": 5,
+                "util_multiplier": 10,
+                "auto": true
+            },
+            "plf_choice": "preday",
+            "kappa_comm_reg": 0.2,
+            "kappa_comm_not_reg": 0.3333333
+        }
+    },
+    "alt_modes": {
+        "pt": {
+            "base_fare": 1.0,
+            "km_fare": 0.2
+        },
+        "car": {
+            "km_cost": 0.25,
+            "diff_parking": false,
+            "park_cost": 0,
+            "park_cost_center": 0,
+            "access_time": 120
+        },
+        "bike": {
+            "access_time": 120
+        }
+    },
+    "dist_threshold_min": 2000,
+    "drivers": {
+        "fuel_costs": 0.25
+    },
+    "dem_mh_share": 0,
+    "sup_mh_share": 0,
+    "study_name": "tmc",
+    "convergence": {
+        "req_steady_days": 10,
+        "factor": 0.002,
+        "first_moving_avg": 25,
+        "second_moving_avg": 50,
+        "abs_ptcp_diff_dem": 2,
+        "abs_ptcp_diff_sup": 0.05
+    },
+    "tmc": {
+        "duration": 30,
+        "price": {
+            "min": 0.01,
+            "max": 2.5,
+            "step": 0.01
+        },
+        "max_balance_rel_to_init_allocation": 3,
+        "max_buy_day": 300,
+        "credit_mode": {
+            "bike": {
+                "base": 0,
+                "dist": 0
+            },
+            "car": {
+                "base": 0,
+                "dist": 10
+            },
+            "pt": {
+                "base": 0,
+                "dist": 2
+            },
+            "solo": {
+                "base": 0,
+                "dist": 10
+            },
+            "pool": {
+                "base": 0,
+                "dist": 5
+            }
+        },
+        "allocated_credits_per_day": 2,
+        "pref_trading": {
+            "balance_util_percept": 2,
+            "excess_credit_param": 1,
+            "beta_monetary": -0.1
+        }
+    },
+    "congestion": {
+        "start_perc": 1.2,
+        "min_delay_factor": 1.2,
+        "density_zero_speed": 50,
+        "avg_other_cars_on_road": 10000,
+        "start_congestion_density": 5
+    },
+    "zone_charge": {
+        "car": 10,
+        "solo": 10,
+        "pool": 0
+    }
+}

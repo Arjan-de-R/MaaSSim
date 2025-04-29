@@ -21,7 +21,7 @@ from .driver import driverEvent
 
 def rand_node(df):
     # returns a random node of a graph
-    return df.loc[random.choice(df.index)].name
+    return df.loc[random.choice(df.index)]
 
 
 def generic_generator(generator, n):

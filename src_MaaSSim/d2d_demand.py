@@ -40,10 +40,19 @@ def load_albatross_proc(_inData, _params, avg_speed=False):
     return _inData
 
 
-def load_OTP_result(params):
+def load_OTP_result(params, df):
     # loads the attributes of the recommended PT initeraries
 
-    df = pd.read_csv(params.paths.PT_trips, index_col='id')
+    # Check which column is available
+    if 'pax_id' in df.columns:
+        df.set_index('pax_id', inplace=True)
+    elif 'id' in df.columns:
+        df.set_index('id', inplace=True)
+    elif 'person_id' in df.columns:
+        df.set_index('person_id', inplace=True)
+    else:
+        raise ValueError("None of 'pax_id', 'id' or 'person_id' found in the CSV columns.")
+    
     df.index.name = 'pax_id'
 
     if 'PTdistance' in df.columns: # otp data is already converted to compatible PT attributes
@@ -738,11 +747,58 @@ def sample_from_alba_different_treq(inData, params):
 
     return inData.requests
 
-def read_requests_csv(inData, path):
-    # from src_MaaSSim.data_structures import structures
-    inData.requests = pd.read_csv(path, index_col='pax_id')
+def read_requests_csv(inData, params):
+    '''read request file, passenger file and pt trips (if available) from csv's, and sample from them in case nP is smaller than dataset'''
+    path = params.paths.requests
+
+    def sample_requests_from_csv(n_sample):
+        # Step 1: Count total lines (including header)
+        with open(path) as f:
+            total_lines = sum(1 for _ in f)
+        # Step 2: Define data lines (excluding header)
+        data_lines = np.arange(1, total_lines)
+        # Step 3: Decide how many samples to keep
+        n_sample = min(n_sample, len(data_lines))  # prevent sampling too many
+        # Step 4: Randomly choose which rows to KEEP (optional)
+        keep_indices = np.sort(np.random.choice(data_lines, size=n_sample, replace=False))
+        # Step 5: Compute skiprows = all data rows MINUS the sampled rows
+        skiprows = sorted(set(data_lines) - set(keep_indices))
+        # Step 6: Load CSV with only the sampled rows + header
+        df = pd.read_csv(path, skiprows=skiprows)
+
+        return df, skiprows
+
+    inData.requests, skiprows = sample_requests_from_csv(params.nP)
+
+    # Check which column is available
+    if 'pax_id' in inData.requests.columns:
+        inData.requests.set_index('pax_id', inplace=True)
+    elif 'person_id' in inData.requests.columns:
+        inData.requests.set_index('person_id', inplace=True)
+    else:
+        raise ValueError("Neither 'pax_id' nor 'person_id' found in the CSV columns.")
+
+    if 'origin' not in inData.requests.columns:
+        inData.requests.rename(columns={'origin_id': 'origin'}, inplace=True)
+    if 'destination' not in inData.requests.columns:
+        inData.requests.rename(columns={'destination_id': 'destination'}, inplace=True)
+
+    if np.issubdtype(inData.requests.ttrav.dtype, np.datetime64):
+        inData.requests['ttrav'] = inData.requests.ttrav.dt.total_seconds()
+    if np.issubdtype(inData.requests.ttrav_bike.dtype, np.datetime64):
+        inData.requests['ttrav_bike'] = inData.requests.ttrav_bike.dt.total_seconds()
+
+    if params.paths.get('passengers', False): # separate passenger characteristics
+        inData.passengers = pd.read_csv(params.paths.passengers, index_col='person_id', skiprows=skiprows)
+
+    if params.paths.get('PT_trips',False):
+        df = pd.read_csv(params.paths.PT_trips, skiprows=skiprows)
+        pt_trips = load_OTP_result(params, df) # load output of OpenTripPlanner queries for the preprocessed requests and add resulting PT attributes to inData.requests
+        inData.requests = pd.concat([inData.requests, pt_trips], axis=1)
+        del pt_trips
 
     return inData 
+
 
 def sample_from_database(inData, params):
     "samples nP from large preprocessed demand dataset"
@@ -757,10 +813,10 @@ def sample_from_database(inData, params):
     inData.requests = inData.requests.sort_values(by=['treq']).reset_index(drop=True)
     inData.requests.index.name = 'pax_id'
     if params.paths.get('passengers', False): # passenger data specified as input
-        inData.passengers = inData.passengers[inData.passengers.index.isin(inData.requests["pax_id"])].copy()
+        inData.passengers = inData.passengers[inData.passengers.index.isin(inData.requests.index)].copy()
+        inData.passengers['platforms'] = 0
     else: # no passenger data is specified as input
         inData.passengers = pd.DataFrame(index=inData.requests.index, columns=inData.passengers.columns)
-    inData.passengers = pd.DataFrame(index=inData.requests.index, columns=inData.passengers.columns)
     inData.passengers['pax_id'] = inData.passengers.index.copy()
     inData.passengers.pos = inData.requests.origin.copy()
     inData.passengers.platforms = inData.passengers.platforms.apply(lambda x: [0])
@@ -786,9 +842,9 @@ def platform_regist_trav(inData, end_day, **kwargs):
         else:
             if kpi_ivt:
                 if (inData.platforms.shape[0] > 1): # replace pooling detour signal by individuals' in-vehicle time signal
-                    row.relevant_signal = ([(x+1)* row.ttrav_sp.total_seconds() for x in row.relevant_signal])
+                    row.relevant_signal = ([(x+1)* row.ttrav_sp for x in row.relevant_signal])
                 else:
-                    row.relevant_signal = (row.relevant_signal + 1) * row.ttrav_sp.total_seconds()
+                    row.relevant_signal = (row.relevant_signal + 1) * row.ttrav_sp
             nan_mask = np.isnan(row.relevant_signal)
             nan_mask_no_expectation = np.isnan(row.expected_kpi)
             alt_signal = np.where(nan_mask_no_expectation, mean_perc_kpi, row.expected_kpi)
