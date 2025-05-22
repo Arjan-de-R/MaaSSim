@@ -340,3 +340,8 @@ def collect_results(path):
     for key in collections.keys():
         collections[key] = pd.concat(collections[key])
     return collections
+
+
+def create_seconds_of_day(dt_str):
+    hour, minute, second =  [int(x) for x in dt_str.split(" ")[1].split(":")]
+    return 3600 * hour + 60 * minute + second

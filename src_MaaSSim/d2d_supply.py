@@ -336,3 +336,36 @@ def update_work_exp(inData, end_day):
     df['work_exp'] = df.apply(lambda x: x.work_exp + 1 if (~x.out).sum() > 0 else x.work_exp, axis=1)
 
     return df
+
+
+def determine_centralised_rh_fleet(inData, params):
+    '''determine fleet for centralised ridesourcing based on the number of users'''
+    
+    number_of_drivers_per_trav_solo = params.evol.drivers.get('number_of_drivers_per_trav_solo', 5)
+    number_of_drivers_per_trav_pool = params.evol.drivers.get('number_of_drivers_per_trav_pool', 5)
+    required_drivers = 0
+    # Determine for platform index whether it is a solo or pooled platform based on params.service_types
+    for plf in inData.platforms.index:
+        plf_users = (inData.passengers['mode_day'] == 'rs_{}'.format(plf)).sum()
+        if params.service_types[plf] == 'solo':
+            required_drivers += (plf_users / number_of_drivers_per_trav_solo)
+        elif params.service_types[plf] == 'pool':
+            required_drivers += (plf_users / number_of_drivers_per_trav_pool)
+        else:
+            raise ValueError("Service type not recognised")
+    required_drivers = max(1, math.ceil(required_drivers)) # at least one driver and round to integer drivers
+
+    # Randomly select drivers from the pool of drivers
+    if len(inData.vehicles.index) < required_drivers:
+        required_drivers = len(inData.vehicles.index)
+        raise Warning("More than max. fleet size needed to meet the demand")
+    else:
+        selected_drivers = np.random.choice(inData.vehicles.index, size=required_drivers, replace=False)
+        unselected_drivers = np.setdiff1d(inData.vehicles.index, selected_drivers)
+        inData.vehicles['ptcp'] = inData.vehicles['registered'].copy()
+        inData.vehicles['ptcp'] = inData.vehicles['ptcp'].astype(object)
+        array_val = np.array([False] * len(params.service_types))
+        for idx in unselected_drivers:
+            inData.vehicles.at[idx, 'ptcp'] = array_val.copy()
+    
+    return inData.vehicles

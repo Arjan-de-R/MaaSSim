@@ -5,20 +5,20 @@ import random
 import os
 import pickle
 
-def d2d_summary_day(inData, drivers_summary, travs_summary):
+def d2d_summary_day(inData, drivers_summary, travs_summary, warm_pax_df):
     "add stats of last day to d2d dataframe and prepare for saving to csv"
 
     # Demand
     indicators_wd = ['requests', 'gets_offer', 'accepts_offer', 'xp_wait', 'corr_xp_wait', 'xp_ivt', 'xp_km_fare', 'chosen_mode']
-    indicators_d2d = ['informed', 'registered', 'expected_wait', 'expected_ivt', 'expected_km_fare', 'days_since_reg']
-    if 'tmc_balance' in inData.passengers.columns:
+    indicators_d2d = ['informed', 'registered', 'expected_wait', 'expected_ivt', 'expected_km_fare', 'xp_ttf', 'expected_ttf', 'days_since_reg']
+    if 'tmc_balance' in warm_pax_df.columns:
         indicators_d2d = indicators_d2d + ['tmc_balance','net_purchase','denied_order', 'money_balance','tot_credit_bought', 'tot_credit_sold']
-    if 'paid_cgp' in inData.passengers.columns:
+    if 'paid_cgp' in warm_pax_df.columns:
         indicators_d2d = indicators_d2d + ['paid_cgp']
     occ_strings = [s for s in travs_summary.columns if s.startswith("time_occ")]
     indicators_wd = indicators_wd + occ_strings
 
-    dem_df = pd.concat([travs_summary[indicators_wd].copy(), inData.passengers[indicators_d2d].copy()], axis=1)
+    dem_df = pd.concat([travs_summary[indicators_wd].copy(), warm_pax_df[indicators_d2d].copy()], axis=1)
     for col in dem_df:
         if isinstance(dem_df.head(1)[col].values[0], np.ndarray):
             new_col_list = ['{}_{}'.format(col, plf_id) for plf_id in range(len(dem_df.head(1)[col].values[0]))]
@@ -183,3 +183,24 @@ def set_random_states(result_path):
         np.random.set_state(pickle.load(f))
 
     return 0
+
+
+def save_ttfs_to_d2d_csv(inData, result_path, mode_choice_iter, transport_iter):
+    '''save ttfs (per time period) to d2d dataframe'''
+
+    # Inside your loop, after updating inData.tt_factors:
+    row = inData.tt_factors['travel_time_factor'].copy()
+    row.name = (mode_choice_iter, transport_iter)  # Set MultiIndex (mode_choice_iter, transport_iter)
+    row = row.T  # Make sure it's a Series with zones as index
+    df = row.to_frame().T
+    df.index.names = ['mode_choice_iter', 'transport_iter']
+
+    # Create a copy of the csv by adding the last row to the already existing csv
+    if mode_choice_iter == 0 and transport_iter == 0: # include the headers on the first iteration
+        if os.path.exists(os.path.join(result_path,'d2d_ttfs.csv')):
+            os.remove(os.path.join(result_path,'d2d_ttfs.csv'))
+        df.to_csv(os.path.join(result_path, 'd2d_ttfs.csv'), mode='a', index=True, header=True)
+    else:
+        df.to_csv(os.path.join(result_path, 'd2d_ttfs.csv'), mode='a', index=True, header=False)
+
+    return None

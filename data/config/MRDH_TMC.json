@@ -35,7 +35,8 @@
         "fleetpy_config": "constant_config.csv",
         "requests": "MaaSSim/data/demand/MRDH/requests.csv",
         "passengers": "MaaSSim/data/demand/MRDH/passengers.csv",
-        "PT_trips": "MaaSSim/data/demand/MRDH/req_PT.csv"
+        "PT_trips": "MaaSSim/data/demand/MRDH/req_PT.csv",
+        "ttfs": "MaaSSim/data/congestion/MRDH/ttfs.csv"
     },
     "dist_threshold": 100000,
     "big_time": 10,
@@ -75,7 +76,6 @@
         "nThread": 1,
         "nReplications": 1
     },
-    "nD": 500,
     "_ipython_display_": {},
     "_repr_mimebundle_": {},
     "_repr_html_": {},
@@ -212,13 +212,11 @@
         "abs_ptcp_diff_sup": 0.05
     },
     "tmc": {
-        "duration": 30,
         "price": {
-            "min": 0.01,
-            "max": 2.5,
-            "step": 0.01
+            "min": 0.000,
+            "max": 2.500,
+            "step": 0.001
         },
-        "max_balance_rel_to_init_allocation": 3,
         "max_buy_day": 300,
         "credit_mode": {
             "bike": {

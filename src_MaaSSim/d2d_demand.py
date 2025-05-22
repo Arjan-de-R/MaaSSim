@@ -211,8 +211,6 @@ def update_d2d_travellers(*args, **kwargs):
     ret['init_perc_km_fare'] = sim.passengers.expected_km_fare.to_numpy()
     ret['corr_xp_wait'] = ret.xp_wait.copy()
     ret['corr_xp_wait'] = ret.apply(lambda row: determine_corr_xp_wait(params, row), axis=1)
-    ret['new_perc_wait'] = ret.apply(lambda row: learning_new_wait(params, row.init_perc_wait, row.corr_xp_wait, row.requests), axis=1)
-    ret['new_perc_ivt'] = ret.apply(lambda row: learning_new_kpi(params, row.init_perc_ivt, row.xp_ivt, row.requests, row.gets_offer), axis=1)
     ret['new_perc_fare'] = ret.apply(lambda row: learning_new_kpi(params, row.init_perc_km_fare, row.xp_km_fare, row.requests, row.gets_offer), axis=1)
     for col in sim.last_res.pax_exp:
         if col.startswith("time_occ"):
@@ -751,6 +749,10 @@ def read_requests_csv(inData, params):
     '''read request file, passenger file and pt trips (if available) from csv's, and sample from them in case nP is smaller than dataset'''
     path = params.paths.requests
 
+    def create_seconds_of_day(dt_str):
+        hour, minute, second =  [int(x) for x in dt_str.split(" ")[1].split(":")]
+        return 3600 * hour + 60 * minute + second
+
     def sample_requests_from_csv(n_sample):
         # Step 1: Count total lines (including header)
         with open(path) as f:
@@ -783,6 +785,7 @@ def read_requests_csv(inData, params):
     if 'destination' not in inData.requests.columns:
         inData.requests.rename(columns={'destination_id': 'destination'}, inplace=True)
 
+    inData.requests['treq'] = inData.requests.apply(lambda x: create_seconds_of_day(x["treq"]), axis=1)
     if np.issubdtype(inData.requests.ttrav.dtype, np.datetime64):
         inData.requests['ttrav'] = inData.requests.ttrav.dt.total_seconds()
     if np.issubdtype(inData.requests.ttrav_bike.dtype, np.datetime64):
@@ -981,3 +984,125 @@ def platform_regist_trav(inData, end_day, **kwargs):
     inData.passengers.expected_km_fare = regist_df.new_perc_fare
 
     return inData
+
+
+def learn_wd_kpis(inData, travs_summary, params, mc_iter, transport_iter, result_dir, zone_list):
+    '''update expected kpis of within-day transport options and save only the current row to CSV'''
+    min_kappa = params.evol.travellers.get('min_kappa', 0.1)
+    kappa = max(min_kappa, 1/(mc_iter+1))
+
+    # Remove old CSVs on first iteration
+    if mc_iter == 0:
+        for fname in [
+            'd2d_rh_xp_wait.csv',
+            'd2d_rh_expected_wait.csv',
+            'd2d_rh_xp_detour.csv',
+            'd2d_rh_expected_detour.csv'
+        ]:
+            fpath = os.path.join(result_dir, fname)
+            if os.path.exists(fpath):
+                os.remove(fpath)
+
+    # Congestion (experienced TTF)
+    inData.passengers['xp_ttf'] = inData.requests.apply(lambda row: compute_weighted_avg_ttf(row['treq'], row['ttrav'], inData.tt_factors, params), axis=1)
+    inData.passengers['expected_ttf'] = inData.passengers.apply(lambda row: row.expected_ttf * (1-kappa) + kappa * row.xp_ttf, axis=1)
+
+    # Waiting time
+    df = inData.passengers.copy()
+    df['xp_wait'] = travs_summary.corr_xp_wait.apply(lambda arr: np.nan if np.all(np.isnan(arr)) else np.nanmean(arr))
+    avg_wait_per_zone = df.groupby('rh_zone')['xp_wait'].mean()
+    # Build row with all zones (fill missing with nan)
+    wait_row = pd.Series({z: avg_wait_per_zone.get(z, np.nan) for z in zone_list})
+    wait_row_df = pd.DataFrame([wait_row])
+    wait_row_df.index = pd.MultiIndex.from_tuples([(mc_iter, transport_iter)], names=['mode_choice_iter', 'transport_ops_iter'])
+    wait_csv = os.path.join(result_dir, 'd2d_rh_xp_wait.csv')
+    write_header = not os.path.exists(wait_csv)
+    wait_row_df.to_csv(wait_csv, mode='a', header=write_header)
+
+    avg_wait_per_zone = avg_wait_per_zone.rename('avg_wait')
+    inData.passengers['avg_wait'] = inData.passengers['rh_zone'].map(avg_wait_per_zone)
+    inData.passengers['expected_wait'] = inData.passengers.apply(
+        lambda row: row['expected_wait'] * (1-kappa) + kappa * row['avg_wait'] if not pd.isna(row['avg_wait']) else row['expected_wait'], axis=1)
+    avg_expected_wait_per_zone = inData.passengers.groupby('rh_zone')['expected_wait'].mean()
+    ew_row = pd.Series({z: avg_expected_wait_per_zone.get(z, np.nan) for z in zone_list})
+    ew_row_df = pd.DataFrame([ew_row])
+    ew_row_df.index = pd.MultiIndex.from_tuples([(mc_iter, transport_iter)], names=['mode_choice_iter', 'transport_ops_iter'])
+    ew_csv = os.path.join(result_dir, 'd2d_rh_expected_wait.csv')
+    write_header = not os.path.exists(ew_csv)
+    ew_row_df.to_csv(ew_csv, mode='a', header=write_header)
+
+    # In-vehicle time
+    ride_pooling_indices = [i for i, x in enumerate(params.platforms.service_types) if x == 'pool']
+    df['xp_detour'] = travs_summary.xp_detour.apply(lambda arr: safe_nanmean(arr, ride_pooling_indices))
+    avg_detour = df['xp_detour'].mean()
+    detour_row = pd.Series({'detour': avg_detour})
+    detour_row_df = pd.DataFrame([detour_row])
+    detour_row_df.index = pd.MultiIndex.from_tuples([(mc_iter, transport_iter)], names=['mode_choice_iter', 'transport_ops_iter'])
+    detour_csv = os.path.join(result_dir, 'd2d_rh_xp_detour.csv')
+    write_header = not os.path.exists(detour_csv)
+    detour_row_df.to_csv(detour_csv, mode='a', header=write_header)
+
+    inData.passengers['ttrav'] = inData.requests.ttrav.copy()
+    avg_detour_per_plf = np.array([0 if i not in ride_pooling_indices else avg_detour for i in range(len(params.platforms.service_types))])
+    inData.passengers['expected_ivt'] = inData.passengers.apply(
+        lambda row: row['expected_ivt'] * (1-kappa) + kappa * (1 + avg_detour_per_plf) * row.ttrav if not np.any(np.isnan(avg_detour_per_plf)) else row['expected_ivt'], axis=1)
+    inData.passengers['expected_detour'] = inData.passengers.apply(
+        lambda row: (np.mean(row['expected_ivt'][ride_pooling_indices]) - row.ttrav) / row.ttrav, axis=1)
+    avg_expected_detour = inData.passengers['expected_detour'].mean()
+    edetour_row = pd.Series({'detour': avg_expected_detour})
+    edetour_row_df = pd.DataFrame([edetour_row])
+    edetour_row_df.index = pd.MultiIndex.from_tuples([(mc_iter, transport_iter)], names=['mode_choice_iter', 'transport_ops_iter'])
+    edetour_csv = os.path.join(result_dir, 'd2d_rh_expected_detour.csv')
+    write_header = not os.path.exists(edetour_csv)
+    edetour_row_df.to_csv(edetour_csv, mode='a', header=write_header)
+
+    inData.passengers.drop(columns=['ttrav', 'expected_detour'], inplace=True)
+
+    return inData.passengers
+
+
+def safe_nanmean(arr, ride_pooling_indices):
+    if arr is None:
+        return np.nan
+    if len(arr) == 0:
+        return np.nan
+    if np.all(np.isnan(arr)):
+        return np.nan
+    if not any(idx < len(arr) for idx in ride_pooling_indices):
+        return np.nan
+    valid_values = [arr[idx] for idx in ride_pooling_indices if idx < len(arr) and not np.isnan(arr[idx])]
+    if len(valid_values) == 0:
+        return np.nan
+    return np.nanmean(valid_values)
+
+
+def compute_weighted_avg_ttf(treq, ttrav, tt_factors, params):
+    '''Compute the weighted average travel time factor for a given trip.'''
+    
+    # Ensure index is sorted
+    tt_factors = tt_factors.sort_index()
+    tt_factors = tt_factors.copy()  # to avoid SettingWithCopyWarning
+    tt_factors['start_time'] = tt_factors.index
+    tt_factors['end_time'] = tt_factors['start_time'].shift(-1)
+    tt_factors['end_time'] = tt_factors['end_time'].fillna(params.t0 + params.simTime*3600)
+    
+    t_start = treq
+    t_end = treq + ttrav
+
+    # Filter periods that overlap with trip
+    overlapping = tt_factors[
+        (tt_factors['end_time'] > t_start) & (tt_factors['start_time'] < t_end)
+    ].copy()
+
+    if overlapping.empty:
+        return 1.0  # default value if no overlap
+
+    # Compute how much time is spent in each overlapping period
+    overlapping['overlap_duration'] = overlapping.apply(
+        lambda row: max(0, min(t_end, row['end_time']) - max(t_start, row['start_time'])),
+        axis=1
+    )
+
+    # Weighted average
+    weighted_sum = (overlapping['travel_time_factor'] * overlapping['overlap_duration']).sum()
+    return weighted_sum / ttrav
